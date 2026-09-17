@@ -249,9 +249,10 @@ export default function Index() {
     };
   }, [isMobileLayout, isNavOpen]);
 
-  // Close search results when clicking outside (panel is portaled to body)
+  // Close search results when tapping/clicking outside (panel is portaled to body)
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    if (!showSearchResults) return;
+    const handlePointerOutside = (event: PointerEvent) => {
       const target = event.target as Node;
       const inAnchor = searchRef.current?.contains(target);
       const inPanel = searchPanelRef.current?.contains(target);
@@ -260,9 +261,9 @@ export default function Index() {
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener('pointerdown', handlePointerOutside);
+    return () => document.removeEventListener('pointerdown', handlePointerOutside);
+  }, [showSearchResults]);
 
   // Clear refs when subsection changes to ensure fresh DOM references
   useEffect(() => {
@@ -866,6 +867,7 @@ export default function Index() {
           ) : !currentSubsection ? (
             <div
               key="home-scroll"
+              data-study-scroll
               className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden scrollbar-hide"
             >
               <div className="min-h-full w-full">
@@ -888,6 +890,7 @@ export default function Index() {
             <div
               key="study-scroll"
               ref={studyMainScrollRef}
+              data-study-scroll
               className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden scrollbar-hide"
             >
               <div className="container mx-auto min-w-0 max-w-full px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0">

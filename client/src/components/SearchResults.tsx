@@ -1,6 +1,5 @@
-import { useCallback, useLayoutEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SearchResult } from '@/hooks/useGlobalSearch';
@@ -37,6 +36,8 @@ const TYPE_CONFIG = {
 
 type PanelBox = { top: number; left: number; width: number; maxHeight: number };
 
+const MOBILE_BREAKPOINT = 1024;
+
 export function SearchResults({
   results,
   query,
@@ -54,8 +55,11 @@ export function SearchResults({
     const gap = 8;
     const viewportPad = 8;
     const top = rect.bottom + gap;
-    const left = Math.max(viewportPad, rect.left);
-    const width = Math.min(rect.width, window.innerWidth - left - viewportPad);
+    const isMobile = window.innerWidth < MOBILE_BREAKPOINT;
+    const left = isMobile ? viewportPad : Math.max(viewportPad, rect.left);
+    const width = isMobile
+      ? window.innerWidth - viewportPad * 2
+      : Math.min(rect.width, window.innerWidth - left - viewportPad);
     const maxHeight = Math.max(160, window.innerHeight - top - viewportPad);
     setBox({ top, left, width, maxHeight });
   }, [anchorRef]);
@@ -76,21 +80,69 @@ export function SearchResults({
     };
   }, [updatePosition]);
 
+  // Lock background scroll while search is open (body + nested study scrollers)
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyTouchAction = body.style.touchAction;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    body.style.touchAction = 'none';
+
+    const scrollables = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-study-scroll]'),
+    );
+    const prevOverflows = scrollables.map((node) => {
+      const prev = node.style.overflowY;
+      node.style.overflowY = 'hidden';
+      return { node, prev };
+    });
+
+    const allowInsidePanel = (target: EventTarget | null) => {
+      const node = target as Node | null;
+      if (!node) return false;
+      if (panelRef?.current?.contains(node)) return true;
+      if (anchorRef.current?.contains(node)) return true;
+      return false;
+    };
+
+    const blockBackgroundScroll = (e: TouchEvent | WheelEvent) => {
+      if (allowInsidePanel(e.target)) return;
+      e.preventDefault();
+    };
+
+    document.addEventListener('touchmove', blockBackgroundScroll, { passive: false });
+    document.addEventListener('wheel', blockBackgroundScroll, { passive: false });
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.touchAction = prevBodyTouchAction;
+      prevOverflows.forEach(({ node, prev }) => {
+        node.style.overflowY = prev;
+      });
+      document.removeEventListener('touchmove', blockBackgroundScroll);
+      document.removeEventListener('wheel', blockBackgroundScroll);
+    };
+  }, [anchorRef, panelRef]);
+
   if (!box) return null;
+
+  const dismiss = () => onDismiss?.();
 
   const panel = (
     <>
-      {/* Sit above page glass cards; below native iOS autofill chrome (unavoidable). */}
+      {/* Sit above page glass cards; tap anywhere outside the panel to close. */}
       <div
-        className="fixed inset-0 z-[199] bg-background/40"
+        className="fixed inset-0 z-[199] bg-background/50"
         aria-hidden
-        onMouseDown={(e) => {
+        data-testid="search-results-backdrop"
+        onPointerDown={(e) => {
           e.preventDefault();
-          onDismiss?.();
-        }}
-        onTouchStart={(e) => {
-          e.preventDefault();
-          onDismiss?.();
+          e.stopPropagation();
+          dismiss();
         }}
       />
       <div
@@ -103,76 +155,80 @@ export function SearchResults({
           width: box.width,
           maxHeight: box.maxHeight,
         }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
-      {results.length === 0 ? (
-        <Card className="border bg-background p-4 shadow-elevated">
-          <p className="text-sm text-muted-foreground text-center">
-            No results found for "{query}"
-          </p>
-        </Card>
-      ) : (
-        <Card className="flex max-h-[inherit] flex-col overflow-hidden border bg-background shadow-elevated">
-          <div className="shrink-0 border-b border-border bg-background p-3">
-            <p className="text-sm font-semibold text-foreground">
-              {results.length} {results.length === 1 ? 'Result' : 'Results'} Found
+        {results.length === 0 ? (
+          <Card className="border bg-background p-4 shadow-elevated">
+            <p className="text-sm text-muted-foreground text-center">
+              No results found for "{query}"
             </p>
-          </div>
-          <ScrollArea className="min-h-0 flex-1" style={{ maxHeight: Math.max(120, box.maxHeight - 52) }}>
-            <div className="space-y-4 p-2">
-              {(['question', 'reference', 'note'] as const).map((type) => {
-                const typeResults = results.filter((r) => r.type === type);
-                if (typeResults.length === 0) return null;
-
-                const config = TYPE_CONFIG[type];
-                const Icon = config.icon;
-
-                return (
-                  <div key={type}>
-                    <div className="mb-2 flex items-center gap-2 px-2 py-1">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-xs font-semibold uppercase text-muted-foreground">
-                        {config.label}s ({typeResults.length})
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {typeResults.map((result, index) => (
-                        <button
-                          key={`${result.type}-${result.subsectionId}-${index}`}
-                          type="button"
-                          onClick={() =>
-                            onResultClick(
-                              result.sectionId,
-                              result.subsectionId,
-                              result.questionId,
-                              result.noteId
-                            )
-                          }
-                          className={cn(
-                            'w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/5',
-                            'focus:outline-none focus:ring-2 focus:ring-ring'
-                          )}
-                        >
-                          <div className="mb-2 flex items-start gap-2">
-                            <Badge variant="outline" className={cn('text-xs', config.color)}>
-                              {result.sectionTitle}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {result.subsectionTitle}
-                            </span>
-                          </div>
-                          <p className="line-clamp-2 text-sm text-foreground/90">
-                            {highlightMatch(result.matchedText, query)}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+          </Card>
+        ) : (
+          <Card className="flex max-h-[inherit] flex-col overflow-hidden border bg-background shadow-elevated">
+            <div className="shrink-0 border-b border-border bg-background p-3">
+              <p className="text-sm font-semibold text-foreground">
+                {results.length} {results.length === 1 ? 'Result' : 'Results'} Found
+              </p>
             </div>
-          </ScrollArea>
-        </Card>
-      )}
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain touch-pan-y"
+              style={{ maxHeight: Math.max(120, box.maxHeight - 52), WebkitOverflowScrolling: 'touch' }}
+            >
+              <div className="space-y-4 p-2">
+                {(['question', 'reference', 'note'] as const).map((type) => {
+                  const typeResults = results.filter((r) => r.type === type);
+                  if (typeResults.length === 0) return null;
+
+                  const config = TYPE_CONFIG[type];
+                  const Icon = config.icon;
+
+                  return (
+                    <div key={type}>
+                      <div className="mb-2 flex items-center gap-2 px-2 py-1">
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-xs font-semibold uppercase text-muted-foreground">
+                          {config.label}s ({typeResults.length})
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {typeResults.map((result, index) => (
+                          <button
+                            key={`${result.type}-${result.subsectionId}-${index}`}
+                            type="button"
+                            onClick={() =>
+                              onResultClick(
+                                result.sectionId,
+                                result.subsectionId,
+                                result.questionId,
+                                result.noteId
+                              )
+                            }
+                            className={cn(
+                              'w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/5',
+                              'focus:outline-none focus:ring-2 focus:ring-ring'
+                            )}
+                          >
+                            <div className="mb-2 flex items-start gap-2">
+                              <Badge variant="outline" className={cn('text-xs', config.color)}>
+                                {result.sectionTitle}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {result.subsectionTitle}
+                              </span>
+                            </div>
+                            <p className="line-clamp-2 text-sm text-foreground/90">
+                              {highlightMatch(result.matchedText, query)}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
     </>
   );

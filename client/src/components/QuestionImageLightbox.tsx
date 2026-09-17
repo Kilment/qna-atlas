@@ -99,7 +99,15 @@ export function QuestionImageLightbox({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-w-[min(96vw,1200px)] w-full h-[min(92vh,900px)] p-0 gap-0 overflow-hidden flex flex-col select-none"
+        className={cn(
+          'max-w-[min(96vw,1200px)] w-full p-0 gap-0 overflow-hidden flex flex-col select-none',
+          // Desktop: centered dialog
+          'h-[min(92vh,900px)]',
+          // Mobile: pin inside the visible viewport (iOS vh includes URL-bar chrome and clips the toolbar)
+          'max-sm:h-[calc(100dvh-1.25rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))]',
+          'max-sm:top-[max(0.75rem,env(safe-area-inset-top,0px))] max-sm:bottom-auto',
+          'max-sm:translate-y-0 max-sm:data-[state=open]:slide-in-from-top-2 max-sm:data-[state=closed]:slide-out-to-top-2',
+        )}
         aria-describedby={undefined}
         hideCloseButton
         onOpenAutoFocus={(e) => e.preventDefault()}
