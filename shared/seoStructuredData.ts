@@ -28,7 +28,7 @@ function organizationAndWebSite(
       url: origin,
       logo: {
         "@type": "ImageObject",
-        url: `${origin}/favicon-192.png?v=20260721d`,
+        url: `${origin}/favicon-192.png?v=20260917a`,
         width: 192,
         height: 192,
       },

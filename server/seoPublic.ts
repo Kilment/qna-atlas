@@ -142,7 +142,7 @@ function redirect301(res: Response, target: string): void {
 function injectAbsoluteFavicons(html: string, origin: string): string {
   const base = normalizePublicOrigin(origin);
   // Cache-bust so Google/browsers pick up the latest uploaded favicon.
-  const v = "20260917";
+  const v = "20260917a";
   const iconBlock = [
     `<link rel="icon" type="image/png" sizes="512x512" href="${base}/favicon.png?v=${v}" />`,
     `<link rel="icon" type="image/png" sizes="48x48" href="${base}/favicon-48.png?v=${v}" />`,
@@ -499,7 +499,7 @@ export function registerSeoPublicRoutes(app: Express): void {
     const origin =
       getCanonicalOriginForHost(host) || specialty.canonicalOrigin;
     const base = normalizePublicOrigin(origin);
-    const v = "20260721d";
+    const v = "20260917a";
     const manifest = {
       name: specialty.brandName,
       short_name: specialty.brandName,
