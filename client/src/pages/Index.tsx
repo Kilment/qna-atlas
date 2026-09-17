@@ -66,6 +66,7 @@ export default function Index() {
   const [screenMode, setScreenMode] = useState<ScreenMode>('study');
   const [testModeState, setTestModeState] = useState<TestModeState>({ mode: 'new' });
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
   const subscriptionSuccessIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { data: subscription, isLoading: isCheckingSubscription, refetch: refetchSubscription } = useQuery({
     queryKey: ['/api/subscription', activeSpecialty],
@@ -248,10 +249,13 @@ export default function Index() {
     };
   }, [isMobileLayout, isNavOpen]);
 
-  // Close search results when clicking outside
+  // Close search results when clicking outside (panel is portaled to body)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inAnchor = searchRef.current?.contains(target);
+      const inPanel = searchPanelRef.current?.contains(target);
+      if (!inAnchor && !inPanel) {
         setShowSearchResults(false);
       }
     };
@@ -569,7 +573,7 @@ export default function Index() {
       />
 
       {/* Header - Full Width (liquid glass) */}
-      <header className="glass-nav w-full static rounded-b-2xl sm:sticky sm:top-0 sm:z-50">
+      <header className="glass-nav relative z-50 w-full static rounded-b-2xl sm:sticky sm:top-0">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-2">
             {/* Top Row: Home, Title, Actions */}
             <div className="flex flex-nowrap items-center gap-2 sm:gap-4 min-w-0">
@@ -735,7 +739,7 @@ export default function Index() {
                 )}
               </Button>
               )}
-              <div className="relative z-[9999] flex-1 min-w-0 max-w-full" ref={searchRef}>
+              <div className="relative flex-1 min-w-0 max-w-full" ref={searchRef}>
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input
                   type="text"
@@ -755,6 +759,9 @@ export default function Index() {
                     results={searchResults}
                     query={searchQuery}
                     onResultClick={handleSearchResultClick}
+                    anchorRef={searchRef}
+                    panelRef={searchPanelRef}
+                    onDismiss={() => setShowSearchResults(false)}
                   />
                 )}
               </div>

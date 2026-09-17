@@ -1,3 +1,5 @@
+import { useCallback, useLayoutEffect, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +11,10 @@ interface SearchResultsProps {
   results: SearchResult[];
   query: string;
   onResultClick: (sectionId: string, subsectionId: string, questionId?: string, noteId?: string) => void;
+  /** Anchor the floating panel under this element (portaled to body so it can't be covered). */
+  anchorRef: RefObject<HTMLElement | null>;
+  panelRef?: RefObject<HTMLDivElement | null>;
+  onDismiss?: () => void;
 }
 
 const TYPE_CONFIG = {
@@ -29,106 +35,166 @@ const TYPE_CONFIG = {
   },
 };
 
-export function SearchResults({ results, query, onResultClick }: SearchResultsProps) {
-  if (results.length === 0) {
-    return (
-      <div className="absolute top-full left-0 right-0 mt-2 z-[9999]">
-        <Card className="p-4 shadow-elevated">
+type PanelBox = { top: number; left: number; width: number; maxHeight: number };
+
+export function SearchResults({
+  results,
+  query,
+  onResultClick,
+  anchorRef,
+  panelRef,
+  onDismiss,
+}: SearchResultsProps) {
+  const [box, setBox] = useState<PanelBox | null>(null);
+
+  const updatePosition = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const gap = 8;
+    const viewportPad = 8;
+    const top = rect.bottom + gap;
+    const left = Math.max(viewportPad, rect.left);
+    const width = Math.min(rect.width, window.innerWidth - left - viewportPad);
+    const maxHeight = Math.max(160, window.innerHeight - top - viewportPad);
+    setBox({ top, left, width, maxHeight });
+  }, [anchorRef]);
+
+  useLayoutEffect(() => {
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    // capture: true so we catch scroll in nested overflow containers
+    window.addEventListener('scroll', updatePosition, true);
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', updatePosition);
+    vv?.addEventListener('scroll', updatePosition);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      vv?.removeEventListener('resize', updatePosition);
+      vv?.removeEventListener('scroll', updatePosition);
+    };
+  }, [updatePosition]);
+
+  if (!box) return null;
+
+  const panel = (
+    <>
+      {/* Sit above page glass cards; below native iOS autofill chrome (unavoidable). */}
+      <div
+        className="fixed inset-0 z-[199] bg-background/40"
+        aria-hidden
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onDismiss?.();
+        }}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          onDismiss?.();
+        }}
+      />
+      <div
+        ref={panelRef}
+        data-testid="search-results-panel"
+        className="fixed z-[200] pointer-events-auto"
+        style={{
+          top: box.top,
+          left: box.left,
+          width: box.width,
+          maxHeight: box.maxHeight,
+        }}
+      >
+      {results.length === 0 ? (
+        <Card className="border bg-background p-4 shadow-elevated">
           <p className="text-sm text-muted-foreground text-center">
             No results found for "{query}"
           </p>
         </Card>
-      </div>
-    );
-  }
-
-  // Group results by type
-  const groupedResults = {
-    question: results.filter(r => r.type === 'question'),
-    reference: results.filter(r => r.type === 'reference'),
-    note: results.filter(r => r.type === 'note'),
-  };
-
-  return (
-    <div className="absolute top-full left-0 right-0 mt-2 z-[9999]">
-      <Card className="shadow-elevated overflow-hidden">
-        <div className="p-3 border-b border-border bg-accent/5">
-          <p className="text-sm font-semibold text-foreground">
-            {results.length} {results.length === 1 ? 'result' : 'results'} found
-          </p>
-        </div>
-        <ScrollArea className="h-[450px]">
-          <div className="p-2 space-y-4">
-            {Object.entries(groupedResults).map(([type, typeResults]) => {
-              if (typeResults.length === 0) return null;
-              
-              const config = TYPE_CONFIG[type as keyof typeof TYPE_CONFIG];
-              const Icon = config.icon;
-
-              return (
-                <div key={type}>
-                  <div className="flex items-center gap-2 px-2 py-1 mb-2">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-xs font-semibold text-muted-foreground uppercase">
-                      {config.label}s ({typeResults.length})
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    {typeResults.map((result, index) => (
-                      <button
-                        key={`${result.type}-${result.subsectionId}-${index}`}
-                        onClick={() => onResultClick(
-                          result.sectionId, 
-                          result.subsectionId, 
-                          result.questionId, 
-                          result.noteId
-                        )}
-                        className={cn(
-                          "w-full text-left p-3 rounded-lg border transition-colors hover:bg-accent/5",
-                          "focus:outline-none focus:ring-2 focus:ring-ring"
-                        )}
-                      >
-                        <div className="flex items-start gap-2 mb-2">
-                          <Badge variant="outline" className={cn("text-xs", config.color)}>
-                            {result.sectionTitle}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {result.subsectionTitle}
-                          </span>
-                        </div>
-                        <p className="text-sm text-foreground/90 line-clamp-2">
-                          {highlightMatch(result.matchedText, query)}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+      ) : (
+        <Card className="flex max-h-[inherit] flex-col overflow-hidden border bg-background shadow-elevated">
+          <div className="shrink-0 border-b border-border bg-background p-3">
+            <p className="text-sm font-semibold text-foreground">
+              {results.length} {results.length === 1 ? 'result' : 'results'} found
+            </p>
           </div>
-        </ScrollArea>
-      </Card>
-    </div>
+          <ScrollArea className="min-h-0 flex-1" style={{ maxHeight: Math.max(120, box.maxHeight - 52) }}>
+            <div className="space-y-4 p-2">
+              {(['question', 'reference', 'note'] as const).map((type) => {
+                const typeResults = results.filter((r) => r.type === type);
+                if (typeResults.length === 0) return null;
+
+                const config = TYPE_CONFIG[type];
+                const Icon = config.icon;
+
+                return (
+                  <div key={type}>
+                    <div className="mb-2 flex items-center gap-2 px-2 py-1">
+                      <Icon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-xs font-semibold uppercase text-muted-foreground">
+                        {config.label}s ({typeResults.length})
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {typeResults.map((result, index) => (
+                        <button
+                          key={`${result.type}-${result.subsectionId}-${index}`}
+                          type="button"
+                          onClick={() =>
+                            onResultClick(
+                              result.sectionId,
+                              result.subsectionId,
+                              result.questionId,
+                              result.noteId
+                            )
+                          }
+                          className={cn(
+                            'w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/5',
+                            'focus:outline-none focus:ring-2 focus:ring-ring'
+                          )}
+                        >
+                          <div className="mb-2 flex items-start gap-2">
+                            <Badge variant="outline" className={cn('text-xs', config.color)}>
+                              {result.sectionTitle}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {result.subsectionTitle}
+                            </span>
+                          </div>
+                          <p className="line-clamp-2 text-sm text-foreground/90">
+                            {highlightMatch(result.matchedText, query)}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </Card>
+      )}
+      </div>
+    </>
   );
+
+  return createPortal(panel, document.body);
 }
 
 function highlightMatch(text: string, query: string) {
   const lowerText = text.toLowerCase();
   const lowerQuery = query.toLowerCase();
   const index = lowerText.indexOf(lowerQuery);
-  
+
   if (index === -1) return text;
-  
+
   const before = text.substring(0, index);
   const match = text.substring(index, index + query.length);
   const after = text.substring(index + query.length);
-  
+
   return (
     <>
       {before}
-      <mark className="bg-primary/30 px-0.5 rounded font-semibold">
-        {match}
-      </mark>
+      <mark className="rounded bg-primary/30 px-0.5 font-semibold">{match}</mark>
       {after}
     </>
   );
