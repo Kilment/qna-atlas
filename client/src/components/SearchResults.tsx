@@ -114,7 +114,7 @@ export function SearchResults({
         <Card className="flex max-h-[inherit] flex-col overflow-hidden border bg-background shadow-elevated">
           <div className="shrink-0 border-b border-border bg-background p-3">
             <p className="text-sm font-semibold text-foreground">
-              {results.length} {results.length === 1 ? 'result' : 'results'} found
+              {results.length} {results.length === 1 ? 'Result' : 'Results'} Found
             </p>
           </div>
           <ScrollArea className="min-h-0 flex-1" style={{ maxHeight: Math.max(120, box.maxHeight - 52) }}>
