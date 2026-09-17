@@ -4,10 +4,12 @@
  * Production runs on its own database that the workspace cannot reach, so content
  * authored in dev travels in the repo and is promoted here, on deploy.
  *
- * Production is the source of truth for existing questions: the audit agent revises them
- * and admins flag and hide them. Promotion is therefore insert-only — it adds questions
- * this database has never seen and never touches a row that already exists. A deliberate
- * overwrite is available through "npm run content:import", not from here.
+ * Insert-only promotion (deploy default):
+ * - Inserts questions this database has never seen
+ * - On existing rows, syncs flagged / visible / image_url / image_alt from the content file
+ * - Never overwrites stem, answer, tags, source, or subsection (production wording stays)
+ *
+ * Full overwrite is available via `MODE=upsert npm run content:import`, not from here.
  *
  * Set CONTENT_BOOTSTRAP=0 to skip entirely.
  */
@@ -60,7 +62,7 @@ export async function runContentBootstrap(logger: (message: string) => void = co
           await recordPromotion(client, specialtyId, file, counts.questions);
           const after = await countSpecialtyContent(client, specialtyId);
           logger(
-            `[contentBootstrap] ${specialtyId} promoted: added ${counts.questions} new questions, left ${counts.questionsSkipped} existing rows untouched (bank now ${after.sections} sections / ${after.questions} questions)`
+            `[contentBootstrap] ${specialtyId} promoted: wrote ${counts.questions} question rows (insert + flagged/visible/image sync; skipped ${counts.questionsSkipped}); bank now ${after.sections} sections / ${after.questions} questions`
           );
         } finally {
           await client.query("SELECT pg_advisory_unlock($1)", [lockKey(specialtyId)]);

@@ -642,15 +642,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update question visibility / content-audit flag. Admin only: hiding, flagging and
-  // unflagging change what every learner sees, so being signed in is not sufficient.
+  // Update question content, visibility, media, or content-audit flag. Admin only:
+  // these changes affect what every learner sees, so being signed in is not sufficient.
   app.patch('/api/questions/:id', async (req: any, res) => {
     if (!requireAdminCode(req)) {
       return res.status(401).json({ message: "Unauthorized." });
     }
     try {
       const { id } = req.params;
-      const { visible, flagged, imageUrl, imageAlt } = req.body ?? {};
+      const {
+        question: questionText,
+        answer,
+        rationale,
+        visible,
+        flagged,
+        imageUrl,
+        imageAlt,
+      } = req.body ?? {};
+
+      if (questionText !== undefined || answer !== undefined) {
+        if (typeof questionText !== "string" || typeof answer !== "string") {
+          return res.status(400).json({ message: "question and answer must both be strings." });
+        }
+        const nextQuestion = questionText.trim();
+        const nextAnswer = answer.trim();
+        if (!nextQuestion || !nextAnswer) {
+          return res.status(400).json({ message: "question and answer cannot be empty." });
+        }
+        if (rationale !== undefined && typeof rationale !== "string") {
+          return res.status(400).json({ message: "rationale must be a string." });
+        }
+        const formatResult = validateQuestionFormat(nextQuestion, nextAnswer);
+        if (!formatResult.valid) {
+          return res.status(400).json({
+            message: "Question failed format validation.",
+            errors: formatResult.errors,
+          });
+        }
+        const existing = await storage.getQuestion(id);
+        if (!existing) {
+          return res.status(404).json({ message: "Question not found." });
+        }
+        if (existing.question === nextQuestion && existing.answer === nextAnswer) {
+          return res.json({ id, question: nextQuestion, answer: nextAnswer, unchanged: true });
+        }
+        await storage.createQuestionRevision({
+          questionId: id,
+          action: "revise",
+          previousQuestion: existing.question,
+          previousAnswer: existing.answer,
+          newQuestion: nextQuestion,
+          newAnswer: nextAnswer,
+          source: "admin",
+          rationale: typeof rationale === "string" ? rationale.trim() || null : null,
+          reportIds: [],
+        });
+        const ok = await storage.updateQuestionText(id, nextQuestion, nextAnswer);
+        if (!ok) {
+          return res.status(500).json({ message: "Failed to update question content." });
+        }
+        return res.json({ id, question: nextQuestion, answer: nextAnswer });
+      }
 
       if (imageUrl !== undefined || imageAlt !== undefined) {
         if (imageUrl !== undefined && imageUrl !== null && typeof imageUrl !== "string") {
@@ -685,7 +737,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (typeof visible !== "boolean") {
-        return res.status(400).json({ message: "Body must include visible: boolean, flagged: boolean, and/or imageUrl/imageAlt." });
+        return res.status(400).json({
+          message:
+            "Body must include question/answer, visible: boolean, flagged: boolean, and/or imageUrl/imageAlt.",
+        });
       }
       const question = await storage.getQuestion(id);
       if (!question) {

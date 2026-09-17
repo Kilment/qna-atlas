@@ -6,9 +6,9 @@
  *
  * Target: must be stated explicitly — see importDbTarget.ts.
  *
- * Defaults to insert-only, matching the deploy-time promotion: existing rows on the target
- * are left alone, because production is the source of truth for question wording. Pass
- * MODE=upsert only to deliberately overwrite the target from this file (a restore).
+ * Defaults to insert-only, matching deploy-time promotion: new rows are inserted; existing
+ * rows sync flagged/visible/images but keep production wording. Pass MODE=upsert only to
+ * deliberately overwrite stems/answers from this file (a restore).
  *
  *   DRY_RUN=1 IMPORT_DATABASE_URL="postgresql://..." npm run content:import -- ortho
  *   IMPORT_DATABASE_URL="postgresql://..." npm run content:import -- ortho

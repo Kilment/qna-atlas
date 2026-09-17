@@ -135,13 +135,18 @@ export async function applyContentSchemaGuards(target: Queryable): Promise<void>
   `);
 }
 
-/** Deterministic hash of the content, independent of when it was exported. */
+/**
+ * Deterministic hash of the content, independent of when it was exported.
+ * Includes a promotion-semantics marker so changing what insert-only syncs forces a
+ * re-promote on deploy even when question rows are otherwise unchanged.
+ */
 export function computeContentHash(parts: {
   sections: ContentSection[];
   subsections: ContentSubsection[];
   questions: ContentQuestion[];
 }): string {
   const hash = createHash("sha256");
+  hash.update("promotion:insert-only-syncs-flagged-visible-images\n");
   for (const s of [...parts.sections].sort((a, b) => a.id.localeCompare(b.id))) {
     hash.update(`S:${s.id}:${s.specialtyId}:${s.title}:${s.sortOrder}\n`);
   }
@@ -187,19 +192,20 @@ export async function recordPromotion(
 }
 
 /**
- * Production is the source of truth for question wording: the audit agent revises rows
- * there, and admins flag and hide them. Promotion therefore adds questions the target has
- * never seen and leaves every existing row alone. "upsert" overwrites instead, and is only
- * for a deliberate, operator-driven restore.
+ * Question wording on production is authoritative (audit agent revisions). Promotion modes:
+ * - insert-only (deploy default): insert new questions; on conflict sync visibility controls
+ *   (flagged, visible) and media (image_url, image_alt) from the content file, but never
+ *   overwrite stem/answer/tags/source/subsection.
+ * - upsert: full overwrite from the content file — operator-driven restore only.
  */
 export type ImportMode = "insert-only" | "upsert";
 
 export type ImportCounts = {
   sections: number;
   subsections: number;
-  /** Questions actually written. Under insert-only this counts new rows only. */
+  /** Rows returned from INSERT…ON CONFLICT (inserts + updates that ran). */
   questions: number;
-  /** Questions already present on the target and therefore left untouched. */
+  /** Batch size minus returned rows (normally 0 when conflict updates always apply). */
   questionsSkipped: number;
 };
 
@@ -216,8 +222,8 @@ function chunk<T>(items: T[], size: number): T[][] {
  * Promotes a content file into `target`. Idempotent, and never deletes.
  *
  * Section and subsection rows are always updated — they are structural, and nothing
- * edits them downstream. Question rows follow `mode`, which defaults to insert-only so a
- * promotion cannot clobber revisions made on the target.
+ * edits them downstream. Question rows follow `mode` (see ImportMode): insert-only keeps
+ * production wording intact while syncing flagged/visible/images.
  */
 export async function importSpecialtyContent(
   target: Queryable,
@@ -304,10 +310,11 @@ export async function importSpecialtyContent(
              image_alt = EXCLUDED.image_alt,
              updated_at = EXCLUDED.updated_at`
         : `DO UPDATE SET
+             visible = EXCLUDED.visible,
+             flagged = EXCLUDED.flagged,
              image_url = EXCLUDED.image_url,
              image_alt = EXCLUDED.image_alt,
-             updated_at = EXCLUDED.updated_at
-           WHERE EXCLUDED.image_url IS NOT NULL OR EXCLUDED.image_alt IS NOT NULL`;
+             updated_at = EXCLUDED.updated_at`;
 
     const written = await target.query(
       `INSERT INTO questions (
