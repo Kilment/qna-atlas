@@ -1,0 +1,1 @@
+- [Production question sync](production-question-sync.md) — existing question corrections require the published audited admin path; content promotion alone is insert-only.
