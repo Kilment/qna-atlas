@@ -5,6 +5,7 @@ All routes require header **`X-Admin-Code`** (same value as `ADMIN_CODE` in env;
 ## Behavior
 
 - **While `active: true` and within 90 days of creation**: any number of user accounts can redeem the same plaintext code (each account only once per code).
+- **`PRSATLAS30` exception**: this built-in code has `max_redemptions = 1`. The first successful redeem grants **1 month** of PRS Atlas access and spends the code forever (later attempts are rejected). It has no 90-day window.
 - **`PATCH ... active: false`**: the code **cannot be redeemed**. Deactivation does not shorten access already granted to people who redeemed earlier.
 - **90-day redemption window**: new codes (including `IOWA-TRIAL`, `TEMPLE-TRIAL`, and `NUMC-TRIAL`) cannot be redeemed after 90 days from creation. If someone redeems on day 89, they still get the full access period (30 days for trial codes, 365 days for institutional). Only the ability to redeem expires at 90 days.
 - **Plaintext is never stored** — only a bcrypt hash. When you **create** a code, copy the plaintext immediately to send to the institution.
@@ -19,6 +20,10 @@ Built-in trial codes (case-insensitive lookup; 90-day redemption window starts w
 - **`IOWA-TRIAL`** (University of Iowa)
 - **`TEMPLE-TRIAL`** (Temple University)
 - **`NUMC-TRIAL`** (Nassau University Medical Center)
+
+One-time promo (case-insensitive lookup; no 90-day window; **one redemption ever** across all accounts):
+
+- **`PRSATLAS30`**: 1 month of PRS Atlas access. After the first successful redeem, the code cannot be used again.
 
 ## API
 

@@ -78,6 +78,7 @@ import { eq, and, or, asc, desc, lte, gte, sql, count, inArray, like, notLike } 
 import {
   IOWA_TRIAL_CODE,
   NUMC_TRIAL_CODE,
+  PRSATLAS30_CODE,
   SOCIALMEDIA_INSTITUTIONAL_CODE,
   TEMPLE_TRIAL_CODE,
   TRIAL_CODE_DURATION_DAYS,
@@ -310,9 +311,11 @@ export interface IStorage {
         codeId: string;
         specialtyId: SpecialtyId;
         codeType: InstitutionalCodeType;
+        maxRedemptions: number | null;
       }
     | { type: "inactive" }
     | { type: "redeem_expired" }
+    | { type: "exhausted" }
     | { type: "not_found" }
   >;
   getInstitutionalCodesAdmin(): Promise<
@@ -340,7 +343,8 @@ export interface IStorage {
     userId: string,
     institutionalCodeId: string,
     specialtyId?: SpecialtyId,
-  ): Promise<void>;
+    grant?: { institutionName: string; expiresAt: Date },
+  ): Promise<{ ok: true } | { ok: false; reason: "exhausted" | "already_redeemed" }>;
   /** True if this account has redeemed at least one institutional code for the q-bank. */
   userHasAnyInstitutionalRedemption(userId: string, specialtyId?: SpecialtyId): Promise<boolean>;
   /** Most recent code redemption for this q-bank, used to distinguish trial vs institutional grants. */
@@ -2561,6 +2565,10 @@ export class DatabaseStorage implements IStorage {
       ADD COLUMN IF NOT EXISTS "redeem_expires_at" timestamp
     `);
     await pool.query(`
+      ALTER TABLE "institutional_codes"
+      ADD COLUMN IF NOT EXISTS "max_redemptions" integer
+    `);
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS "idx_institutional_codes_code_hash" ON "institutional_codes" USING btree ("code_hash")
     `);
     await pool.query(`
@@ -2691,13 +2699,22 @@ export class DatabaseStorage implements IStorage {
       "Nassau University Medical Center",
       { codeType: "trial" },
     );
+    await this.ensureBuiltinInstitutionalCode(
+      PRSATLAS30_CODE,
+      "PRS Atlas",
+      { specialtyId: "prs", maxRedemptions: 1 },
+    );
   }
 
   /** Idempotent: inserts a built-in code when no row matches the plaintext; updates codeType when needed. */
   private async ensureBuiltinInstitutionalCode(
     plaintext: string,
     institutionName: string,
-    options?: { codeType?: InstitutionalCodeType; specialtyId?: SpecialtyId },
+    options?: {
+      codeType?: InstitutionalCodeType;
+      specialtyId?: SpecialtyId;
+      maxRedemptions?: number;
+    },
   ): Promise<void> {
     const codeType = options?.codeType ?? "institutional";
     const specialtyId = getSpecialty(options?.specialtyId ?? DEFAULT_SPECIALTY_ID).id;
@@ -2709,13 +2726,21 @@ export class DatabaseStorage implements IStorage {
         const updates: {
           codeType?: InstitutionalCodeType;
           institutionName?: string;
-          redeemExpiresAt?: Date;
+          specialtyId?: SpecialtyId;
+          redeemExpiresAt?: Date | null;
+          maxRedemptions?: number | null;
         } = {};
         if (parseInstitutionalCodeType(row.codeType) !== codeType) {
           updates.codeType = codeType;
         }
         if (institutionName && row.institutionName !== institutionName) {
           updates.institutionName = institutionName;
+        }
+        if (row.specialtyId !== specialtyId) {
+          updates.specialtyId = specialtyId;
+        }
+        if (options?.maxRedemptions != null && row.maxRedemptions !== options.maxRedemptions) {
+          updates.maxRedemptions = options.maxRedemptions;
         }
         /** Built-in trial codes get a 90-day redemption window from creation. */
         if (!row.redeemExpiresAt && options?.codeType === "trial") {
@@ -2736,6 +2761,7 @@ export class DatabaseStorage implements IStorage {
       codeType,
       active: true,
       createdAt,
+      maxRedemptions: options?.maxRedemptions,
       redeemExpiresAt:
         options?.codeType === "trial"
           ? redeemExpiresAtFromCreatedAt(createdAt, now)
@@ -2754,9 +2780,11 @@ export class DatabaseStorage implements IStorage {
         codeId: string;
         specialtyId: SpecialtyId;
         codeType: InstitutionalCodeType;
+        maxRedemptions: number | null;
       }
     | { type: "inactive" }
     | { type: "redeem_expired" }
+    | { type: "exhausted" }
     | { type: "not_found" }
   > {
     await this.ensureInstitutionalCodesSeed();
@@ -2766,6 +2794,11 @@ export class DatabaseStorage implements IStorage {
     for (const row of rows) {
       const match = await bcrypt.compare(trimmed, row.codeHash);
       if (match) {
+        const maxRedemptions = row.maxRedemptions ?? null;
+        if (maxRedemptions != null) {
+          const used = await this.countInstitutionalCodeRedemptions(row.id);
+          if (used >= maxRedemptions) return { type: "exhausted" };
+        }
         if (row.active === false) return { type: "inactive" };
         if (!isCodeRedeemWindowOpen(row.redeemExpiresAt)) return { type: "redeem_expired" };
         return {
@@ -2774,10 +2807,20 @@ export class DatabaseStorage implements IStorage {
           codeId: row.id,
           specialtyId: getSpecialty(row.specialtyId).id,
           codeType: parseInstitutionalCodeType(row.codeType),
+          maxRedemptions,
         };
       }
     }
     return { type: "not_found" };
+  }
+
+  private async countInstitutionalCodeRedemptions(institutionalCodeId: string): Promise<number> {
+    await this.ensureUserInstitutionalRedemptionsTable();
+    const [row] = await db
+      .select({ n: count() })
+      .from(userInstitutionalCodeRedemptions)
+      .where(eq(userInstitutionalCodeRedemptions.institutionalCodeId, institutionalCodeId));
+    return Number(row?.n ?? 0);
   }
 
   async validateInstitutionalCode(plainCode: string): Promise<string | null> {
@@ -2945,14 +2988,88 @@ export class DatabaseStorage implements IStorage {
     userId: string,
     institutionalCodeId: string,
     specialtyId: SpecialtyId = DEFAULT_SPECIALTY_ID,
-  ): Promise<void> {
+    grant?: { institutionName: string; expiresAt: Date },
+  ): Promise<{ ok: true } | { ok: false; reason: "exhausted" | "already_redeemed" }> {
     await this.ensureUserInstitutionalRedemptionsTable();
     await this.ensureMultiSpecialtyMigration();
-    await db.insert(userInstitutionalCodeRedemptions).values({
-      userId,
-      institutionalCodeId,
-      specialtyId: getSpecialty(specialtyId).id,
-    });
+    const target = getSpecialty(specialtyId).id;
+    if (grant) {
+      await this.getSpecialtyEntitlement(userId, target);
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const codeRes = await client.query<{
+        id: string;
+        max_redemptions: number | null;
+      }>(
+        `SELECT id, max_redemptions FROM "institutional_codes" WHERE id = $1 FOR UPDATE`,
+        [institutionalCodeId],
+      );
+      const codeRow = codeRes.rows[0];
+      if (!codeRow) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "exhausted" };
+      }
+      const existing = await client.query(
+        `SELECT id FROM "user_institutional_code_redemptions"
+         WHERE user_id = $1 AND institutional_code_id = $2
+         LIMIT 1`,
+        [userId, institutionalCodeId],
+      );
+      if (existing.rowCount && existing.rowCount > 0) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "already_redeemed" };
+      }
+      const usedRes = await client.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM "user_institutional_code_redemptions" WHERE institutional_code_id = $1`,
+        [institutionalCodeId],
+      );
+      const used = usedRes.rows[0]?.n ?? 0;
+      if (codeRow.max_redemptions != null && used >= codeRow.max_redemptions) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "exhausted" };
+      }
+      await client.query(
+        `INSERT INTO "user_institutional_code_redemptions" ("user_id", "institutional_code_id", "specialty_id")
+         VALUES ($1, $2, $3)`,
+        [userId, institutionalCodeId, target],
+      );
+      if (grant) {
+        await client.query(
+          `UPDATE "user_specialty_subscriptions"
+           SET "institutional_access_affiliation" = $1,
+               "institutional_access_expires_at" = $2,
+               "updated_at" = NOW()
+           WHERE "user_id" = $3 AND "specialty_id" = $4`,
+          [grant.institutionName, grant.expiresAt, userId, target],
+        );
+        if (target === DEFAULT_SPECIALTY_ID) {
+          await client.query(
+            `UPDATE "users"
+             SET "institutional_access_affiliation" = $1,
+                 "institutional_access_expires_at" = $2,
+                 "updated_at" = NOW()
+             WHERE "id" = $3`,
+            [grant.institutionName, grant.expiresAt, userId],
+          );
+        }
+      }
+      if (codeRow.max_redemptions != null && used + 1 >= codeRow.max_redemptions) {
+        await client.query(`UPDATE "institutional_codes" SET active = false WHERE id = $1`, [
+          institutionalCodeId,
+        ]);
+      }
+      await client.query("COMMIT");
+      return { ok: true };
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (_) {}
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async userHasAnyInstitutionalRedemption(

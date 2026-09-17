@@ -10,6 +10,9 @@ export const IOWA_TRIAL_CODE = "IOWA-TRIAL";
 export const TEMPLE_TRIAL_CODE = "TEMPLE-TRIAL";
 export const NUMC_TRIAL_CODE = "NUMC-TRIAL";
 
+/** One-time promo: 1 month of PRS Atlas access, redeemable a single time ever. */
+export const PRSATLAS30_CODE = "PRSATLAS30";
+
 const BUILTIN_TRIAL_CODES = [IOWA_TRIAL_CODE, TEMPLE_TRIAL_CODE, NUMC_TRIAL_CODE] as const;
 
 export const INSTITUTIONAL_CODE_DURATION_DAYS = 365;
@@ -41,10 +44,14 @@ export function isBuiltinTrialCode(plainCode: string): boolean {
   return BUILTIN_TRIAL_CODES.includes(normalized as (typeof BUILTIN_TRIAL_CODES)[number]);
 }
 
+export function isPrsAtlas30Code(plainCode: string): boolean {
+  return plainCode.trim().toUpperCase() === PRSATLAS30_CODE;
+}
+
 export function normalizeInstitutionalCodeForLookup(plainCode: string): string {
   const trimmed = plainCode.trim();
   if (isUnlimitedInstitutionalCode(trimmed)) return SOCIALMEDIA_INSTITUTIONAL_CODE;
-  if (isBuiltinTrialCode(trimmed)) return trimmed.toUpperCase();
+  if (isBuiltinTrialCode(trimmed) || isPrsAtlas30Code(trimmed)) return trimmed.toUpperCase();
   return trimmed;
 }
 
@@ -60,6 +67,12 @@ export function accessDurationDaysForCodeType(codeType: InstitutionalCodeType): 
 export function addCalendarDays(from: Date, days: number): Date {
   const next = new Date(from);
   next.setDate(next.getDate() + days);
+  return next;
+}
+
+export function addCalendarMonths(from: Date, months: number): Date {
+  const next = new Date(from);
+  next.setMonth(next.getMonth() + months);
   return next;
 }
 
@@ -86,6 +99,9 @@ export function institutionalAccessExpiresAtForRedemption(
 ): Date {
   if (isUnlimitedInstitutionalCode(plainCode)) {
     return new Date(UNLIMITED_INSTITUTIONAL_EXPIRES_AT_ISO);
+  }
+  if (isPrsAtlas30Code(plainCode)) {
+    return addCalendarMonths(new Date(), 1);
   }
   return addCalendarDays(new Date(), accessDurationDaysForCodeType(codeType));
 }

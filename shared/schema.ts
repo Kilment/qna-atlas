@@ -430,6 +430,8 @@ export const institutionalCodes = pgTable("institutional_codes", {
   createdAt: timestamp("created_at").defaultNow(),
   /** After this timestamp, the code cannot be redeemed. Null = no redemption time limit (legacy codes). */
   redeemExpiresAt: timestamp("redeem_expires_at"),
+  /** Null = unlimited accounts may redeem. `1` = a single redemption ever, then the code is spent. */
+  maxRedemptions: integer("max_redemptions"),
 }, (table) => [
   index("idx_institutional_codes_code_hash").on(table.codeHash),
   index("idx_institutional_codes_active").on(table.active),

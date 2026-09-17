@@ -2386,6 +2386,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (resolved.type === "not_found") {
         return res.status(400).json({ message: "Invalid code." });
       }
+      if (resolved.type === "exhausted") {
+        return res.status(400).json({
+          message: "This code has already been redeemed and can only be used once.",
+        });
+      }
       if (resolved.type === "inactive") {
         return res.status(400).json({
           message: "This code has been deactivated and can no longer be redeemed.",
@@ -2413,11 +2418,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const expiresAt = institutionalAccessExpiresAtForRedemption(lookupCode, resolved.codeType);
       /** A code unlocks exactly one q-bank, so redeeming also makes that bank the active one. */
-      await storage.updateSpecialtyEntitlement(userId, resolved.specialtyId, {
-        institutionalAccessAffiliation: resolved.institutionName,
-        institutionalAccessExpiresAt: expiresAt,
-      });
-      await storage.recordInstitutionalCodeRedemption(userId, resolved.codeId, resolved.specialtyId);
+      const recorded = await storage.recordInstitutionalCodeRedemption(
+        userId,
+        resolved.codeId,
+        resolved.specialtyId,
+        {
+          institutionName: resolved.institutionName,
+          expiresAt,
+        },
+      );
+      if (!recorded.ok) {
+        return res.status(400).json({
+          message:
+            recorded.reason === "already_redeemed"
+              ? "You have already redeemed this code on your account. Use a different code or subscribe for personal access."
+              : "This code has already been redeemed and can only be used once.",
+        });
+      }
       await storage.setActiveSpecialty(userId, resolved.specialtyId);
       res.json({
         message: resolved.codeType === "trial" ? "30-day trial started." : "Access Granted!",
