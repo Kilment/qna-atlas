@@ -141,9 +141,10 @@ function redirect301(res: Response, target: string): void {
 
 function injectAbsoluteFavicons(html: string, origin: string): string {
   const base = normalizePublicOrigin(origin);
-  // Cache-bust so Google/browsers pick up the glass icon; 48px PNG first for Search.
-  const v = "20260721d";
+  // Cache-bust so Google/browsers pick up the latest uploaded favicon.
+  const v = "20260917";
   const iconBlock = [
+    `<link rel="icon" type="image/png" sizes="512x512" href="${base}/favicon.png?v=${v}" />`,
     `<link rel="icon" type="image/png" sizes="48x48" href="${base}/favicon-48.png?v=${v}" />`,
     `<link rel="icon" type="image/png" sizes="192x192" href="${base}/favicon-192.png?v=${v}" />`,
     `<link rel="shortcut icon" href="${base}/favicon-48.png?v=${v}" />`,
