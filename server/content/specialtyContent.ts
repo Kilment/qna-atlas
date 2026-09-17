@@ -146,7 +146,7 @@ export function computeContentHash(parts: {
   questions: ContentQuestion[];
 }): string {
   const hash = createHash("sha256");
-  hash.update("promotion:insert-only-syncs-flagged-visible-images\n");
+  hash.update("promotion:insert-only-syncs-flagged-visible-images-v2\n");
   for (const s of [...parts.sections].sort((a, b) => a.id.localeCompare(b.id))) {
     hash.update(`S:${s.id}:${s.specialtyId}:${s.title}:${s.sortOrder}\n`);
   }
