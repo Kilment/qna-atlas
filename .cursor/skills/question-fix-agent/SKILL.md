@@ -72,6 +72,12 @@ All API access goes through `npm run agent:api -- <command>`; image search throu
 A reported or audited question may already have an image that does not match its stem (wrong body
 part or side, wrong modality, wrong condition, a figure from an unrelated study). Open the
 image at `<BASE_URL><imageUrl>` and compare it with the stem and key.
+- Before searching PMC, check whether the wrong image belongs to ANOTHER question (its stem
+  describes what the image shows). If so, file `{"moveImageFromQuestionId": "<source id>", ...}`
+  on the question that image fits. On approval the image moves there and comes off the source
+  (which is hidden if its stem still promises media). Then handle the source question: it now
+  needs its own correct image (PMC search) or a follow-up proposal. Use `export` to look up
+  candidate questions; do not move an image unless you are confident it fits.
 - If a better licensed image exists, attach it with `imageUrl` (this replaces the old one).
 - If none exists, file `{"removeImage": true, "hide": true, ...}` (with `baseHash` and a
   `rationale` that says exactly what the image shows versus what the stem needs). `hide` is

@@ -28,6 +28,7 @@ for (const k of [
 
 const hasDb = !!process.env.DATABASE_URL;
 const QID = `zz-agent-test-${Math.random().toString(36).slice(2, 10)}`;
+const SRC = `zz-agent-src-${Math.random().toString(36).slice(2, 10)}`;
 const RUN = `test-run-${Math.random().toString(36).slice(2, 10)}`;
 
 const QUESTION = [
@@ -100,9 +101,9 @@ describe("question agent API", { skip: !hasDb }, () => {
 
   after(async () => {
     if (pool) {
-      await pool.query(`DELETE FROM question_agent_proposals WHERE question_id = $1`, [QID]);
-      await pool.query(`DELETE FROM question_revisions WHERE question_id = $1`, [QID]);
-      await pool.query(`DELETE FROM questions WHERE id = $1`, [QID]);
+      await pool.query(`DELETE FROM question_agent_proposals WHERE question_id = ANY($1)`, [[QID, SRC]]);
+      await pool.query(`DELETE FROM question_revisions WHERE question_id = ANY($1)`, [[QID, SRC]]);
+      await pool.query(`DELETE FROM questions WHERE id = ANY($1)`, [[QID, SRC]]);
     }
     for (const f of uploadedFiles) {
       fs.rmSync(path.join(process.cwd(), "server/data/agent-images", f), { force: true });
@@ -386,6 +387,73 @@ describe("question agent API", { skip: !hasDb }, () => {
     const r2 = await fix({ baseHash: hash2, rationale: "unhide", question: promised, answer: q.answer, unhide: true });
     assert.equal(r2.status, 400);
     assert.ok(r2.json.blockers.length > 0);
+  });
+
+  it("moves an image from another question only after approval", async () => {
+    const sub = await pool.query(`SELECT id FROM subsections ORDER BY id LIMIT 1`);
+    await pool.query(
+      `INSERT INTO questions (id, subsection_id, question, answer, tags, source, visible, image_url, image_alt, image_credit, image_license)
+       VALUES ($1,$2,$3,$4,'[]'::jsonb,'imported',true,'/question-images/zz-move-test.jpg','A floating thumb','Doe J et al.','CC BY')`,
+      [SRC, sub.rows[0].id, "A clinical photograph is shown. " + QUESTION, ANSWER]
+    );
+    const hash = (await getItem()).item.baseHash;
+    const moveBody = { baseHash: hash, rationale: "This image belongs on this question.", moveImageFromQuestionId: SRC };
+
+    assert.equal((await fix({ ...moveBody, moveImageFromQuestionId: QID })).status, 400, "same question");
+    assert.equal((await fix({ ...moveBody, moveImageFromQuestionId: "zz-does-not-exist" })).status, 404);
+    assert.equal((await fix({ ...moveBody, removeImage: true })).status, 400, "cannot combine with removeImage");
+
+    const dry = await fix(moveBody, "?dryRun=true");
+    assert.equal(dry.status, 200);
+    assert.equal(dry.json.tier, "proposal");
+
+    const r = await fix(moveBody);
+    assert.equal(r.status, 202, JSON.stringify(r.json));
+    assert.ok(r.json.reasons.some((x: string) => x.includes(SRC)), "reviewer sees where the image comes from");
+    let target = await current();
+    let source = (await pool.query(`SELECT * FROM questions WHERE id = $1`, [SRC])).rows[0];
+    assert.equal(target.image_url, null, "nothing moves before approval");
+    assert.equal(source.image_url, "/question-images/zz-move-test.jpg");
+
+    const { approveProposal } = await import("./store");
+    const approved = await approveProposal(r.json.proposalId, "test");
+    assert.equal(approved.ok, true);
+    target = await current();
+    source = (await pool.query(`SELECT * FROM questions WHERE id = $1`, [SRC])).rows[0];
+    assert.equal(target.image_url, "/question-images/zz-move-test.jpg");
+    assert.equal(target.image_alt, "A floating thumb");
+    assert.equal(target.image_credit, "Doe J et al.");
+    assert.equal(target.image_license, "CC BY");
+    assert.equal(source.image_url, null);
+    assert.equal(source.image_credit, null);
+    assert.equal(source.flagged, true, "source stem promises a photo, so it is hidden");
+    assert.equal(source.visible, false);
+
+    const again = await fix({ ...moveBody, baseHash: (await getItem()).item.baseHash });
+    assert.equal(again.status, 400, "source has nothing left to move");
+  });
+
+  it("refuses a move while the source has a pending proposal, and goes stale if its image changes", async () => {
+    await pool.query(`UPDATE questions SET image_url = '/question-images/zz-move-test.jpg', image_alt = 'x', flagged = false, visible = true WHERE id = $1`, [SRC]);
+    await pool.query(`UPDATE questions SET image_url = NULL, image_alt = NULL WHERE id = $1`, [QID]);
+    const srcItem = (await call("GET", `/api/internal/question-agent/question/${encodeURIComponent(SRC)}`)).json.item;
+    const held = await call("POST", "/api/internal/question-agent/fix", {
+      questionId: SRC, runId: RUN, baseHash: srcItem.baseHash, rationale: "wrong image", removeImage: true, hide: true,
+    });
+    assert.equal(held.status, 202, JSON.stringify(held.json));
+    const blocked = await fix({ baseHash: (await getItem()).item.baseHash, rationale: "move", moveImageFromQuestionId: SRC });
+    assert.equal(blocked.status, 409);
+
+    // Clear the blocker, file the move, then change the source image before approval.
+    const { rejectProposal, approveProposal } = await import("./store");
+    await rejectProposal(held.json.proposalId, "test");
+    const move = await fix({ baseHash: (await getItem()).item.baseHash, rationale: "move", moveImageFromQuestionId: SRC });
+    assert.equal(move.status, 202, JSON.stringify(move.json));
+    await pool.query(`UPDATE questions SET image_url = '/question-images/zz-other.jpg' WHERE id = $1`, [SRC]);
+    const res = await approveProposal(move.json.proposalId, "test");
+    assert.equal(res.ok, false);
+    assert.equal((res as any).httpStatus, 409);
+    assert.equal((await current()).image_url, null, "stale move must not attach anything");
   });
 
   it("exports a read-only content snapshot", async () => {

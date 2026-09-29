@@ -35,7 +35,7 @@ wrong token returns 404 (the API does not advertise itself) and repeated failure
 | --- | --- |
 | `GET /queue?category=reported,flagged,missing_media&specialty=&limit=&offset=&includePending=` | Work queue with `baseHash`, reports, media-promise detection, `pendingProposalId` |
 | `GET /question/:id` | One question with recent revisions and proposals |
-| `POST /fix` (`?dryRun=true`) | Submit a fix. Requires `questionId`, `runId`, `rationale`, `baseHash`. Optional `question`+`answer`, `imageUrl`+`imageAlt`+`imageAttribution`, `unhide`, `removeImage` (detach a wrong image), `hide` (flag and hide the question). Image removal and hiding are always proposals; `removeImage` needs `hide` if the stem still refers to an image |
+| `POST /fix` (`?dryRun=true`) | Submit a fix. Requires `questionId`, `runId`, `rationale`, `baseHash`. Optional `question`+`answer`, `imageUrl`+`imageAlt`+`imageAttribution`, `unhide`, `removeImage` (detach a wrong image), `hide` (flag and hide the question), `moveImageFromQuestionId` (reassign: attach the image currently on another question to this one, then remove it there and hide that question if its stem still promises media; refused while the source has a pending proposal, and goes stale if the source image changes before approval). Image removal, hiding and moves are always proposals; `removeImage` needs `hide` if the stem still refers to an image |
 | `POST /image` (multipart `file`) | Upload an image (5 MB, JPEG/PNG/WebP/GIF, magic-byte checked) to the bucket |
 | `POST /revert` | Undo a revision (`revisionId`, `runId`, `rationale`) |
 | `GET /proposals` | List proposals |
@@ -75,8 +75,9 @@ by the app at `/question-images/agent/<uuid>.<ext>` (nosniff, immutable caching)
 
 ## Image policy
 
-- Source: Europe PMC search restricted to open access, then the public PMC Open Access dataset for
-  per-article metadata, XML and figures (`npm run agent:pmc-image`).
+- Source: NCBI PMC search (E-utilities `esearch`/`esummary`, `open access` + CC BY / CC0 / CC BY-SA
+  license filters; optional `NCBI_API_KEY` and `NCBI_CONTACT_EMAIL` env vars), then the public PMC Open Access
+  dataset for per-article metadata (authoritative license), XML and figures (`npm run agent:pmc-image`).
 - Allowed licenses: CC0, CC BY, CC BY-SA, public domain. NC and ND licenses are rejected in the tool
   **and** again on the server (`shared/imageLicense.ts`).
 - Figures that look third party (reproduced, adapted, copyright, courtesy of, or their own

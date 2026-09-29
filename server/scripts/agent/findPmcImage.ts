@@ -2,10 +2,10 @@
  * Find representative, license-safe images on PubMed Central for a question that is missing one.
  *
  *   npm run agent:pmc-image -- --query "sacral pressure injury" [--question-id ID | --question-file q.json]
- *       [--avoid "pressure ulcer,stage IV"] [--extra 'PUB_TYPE:"Case Reports"']
+ *       [--avoid "pressure ulcer,stage IV"] [--extra 'case report[Title]']
  *       [--max-articles 15] [--max-figures 6] [--out-dir tmp/pmc-candidates] [--score] [--min-score 7]
  *
- * Steps: Europe PMC search (open access, CC BY / CC BY-SA / CC0 only) -> PMC Open Access dataset
+ * Steps: NCBI PMC search via E-utilities (open access + CC license prefilter; set NCBI_API_KEY for higher rate limits) -> PMC Open Access dataset
  * metadata (authoritative license, retraction flag) -> figure vetting (third-party markers, caption
  * answer leaks) -> download, downscale (never crop), re-encode -> optional vision scoring.
  *

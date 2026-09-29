@@ -1,7 +1,9 @@
 /**
  * PubMed Central open-access figure sourcing.
  *
- * Search:    Europe PMC REST API (full-text search, license and open-access filters).
+ * Search:    NCBI E-utilities against the PMC database (esearch + esummary), restricted with the PMC
+ *            "open access" and CC BY / CC0 / CC BY-SA license filters. The filters are only a prefilter: the
+ *            authoritative license comes from the Open Access dataset metadata below.
  * Content:   PMC Open Access dataset on AWS (s3://pmc-oa-opendata, public HTTPS). Each article
  *            folder has <PMCID>.<ver>.json (authoritative license_code), the JATS XML (figure
  *            captions) and the figure image files.
@@ -11,7 +13,8 @@
  */
 import { assessImageLicense } from "../../shared/imageLicense";
 
-export const EUROPE_PMC_SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search";
+export const NCBI_EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+const NCBI_TOOL = "prs-atlas-question-agent";
 export const PMC_OA_BUCKET = "https://pmc-oa-opendata.s3.amazonaws.com";
 
 export type FetchLike = (url: string, init?: { headers?: Record<string, string> }) => Promise<{
@@ -159,9 +162,32 @@ function esc(s: string): string {
 }
 
 export function buildSearchQuery(terms: string, extra = ""): string {
+  // "open access" limits to the PMC OA subset; the license filters keep only the commercial-friendly
+  // CC families. The authoritative license is still re-checked from the OA metadata afterwards.
   const filters =
-    'OPEN_ACCESS:y AND HAS_FT:y AND (LICENSE:"cc by" OR LICENSE:"cc0" OR LICENSE:"cc by-sa")';
+    '"open access"[filter] AND ("cc by license"[filter] OR "cc0 license"[filter] OR "cc by-sa license"[filter])';
   return `(${terms}) AND ${filters}${extra ? ` AND (${extra})` : ""}`;
+}
+
+function eutilsUrl(endpoint: string, params: Record<string, string | number>): string {
+  const q = new URLSearchParams({ tool: NCBI_TOOL, retmode: "json" });
+  const email = process.env.NCBI_CONTACT_EMAIL?.trim();
+  if (email) q.set("email", email);
+  const apiKey = process.env.NCBI_API_KEY?.trim();
+  if (apiKey) q.set("api_key", apiKey);
+  for (const [k, v] of Object.entries(params)) q.set(k, String(v));
+  return `${NCBI_EUTILS}/${endpoint}.fcgi?${q.toString()}`;
+}
+
+async function eutilsJson(fetchFn: FetchLike, url: string, what: string): Promise<any> {
+  let res = await fetchFn(url);
+  if (res.status === 429) {
+    // NCBI allows 3 requests/second without an API key; back off once.
+    await new Promise((r) => setTimeout(r, 1200));
+    res = await fetchFn(url);
+  }
+  if (!res.ok) throw new Error(`NCBI PMC ${what} failed: HTTP ${res.status}`);
+  return JSON.parse(await res.text());
 }
 
 export async function searchArticles(
@@ -169,24 +195,40 @@ export async function searchArticles(
   terms: string,
   options: { extra?: string; pageSize?: number } = {}
 ): Promise<PmcArticleHit[]> {
-  const url = `${EUROPE_PMC_SEARCH}?query=${esc(buildSearchQuery(terms, options.extra))}&resultType=core&format=json&pageSize=${
-    options.pageSize ?? 15
-  }`;
-  const res = await fetchFn(url);
-  if (!res.ok) throw new Error(`Europe PMC search failed: HTTP ${res.status}`);
-  const json = JSON.parse(await res.text());
-  const results: any[] = json?.resultList?.result ?? [];
-  return results
-    .filter((r) => typeof r.pmcid === "string")
-    .map((r) => ({
-      pmcid: r.pmcid,
+  const search = await eutilsJson(
+    fetchFn,
+    eutilsUrl("esearch", {
+      db: "pmc",
+      term: buildSearchQuery(terms, options.extra),
+      retmax: options.pageSize ?? 15,
+      sort: "relevance",
+    }),
+    "search"
+  );
+  const ids: string[] = (search?.esearchresult?.idlist ?? []).filter((id: unknown) => /^\d+$/.test(String(id)));
+  if (ids.length === 0) return [];
+
+  const summary = await eutilsJson(fetchFn, eutilsUrl("esummary", { db: "pmc", id: ids.join(",") }), "summary");
+  const result = summary?.result ?? {};
+  const hits: PmcArticleHit[] = [];
+  for (const id of ids) {
+    const r = result[id];
+    if (!r) continue;
+    const articleIds: { idtype?: string; value?: string }[] = Array.isArray(r.articleids) ? r.articleids : [];
+    const pmcidRaw = articleIds.find((a) => a.idtype === "pmcid" || a.idtype === "pmc")?.value;
+    const pmcid = /^PMC\d+$/i.test(pmcidRaw ?? "") ? pmcidRaw!.toUpperCase() : `PMC${id}`;
+    const authors: { name?: string }[] = Array.isArray(r.authors) ? r.authors : [];
+    hits.push({
+      pmcid,
       title: stripXml(String(r.title ?? "")),
-      authorString: String(r.authorString ?? ""),
-      journal: String(r.journalInfo?.journal?.title ?? r.journalTitle ?? ""),
-      year: String(r.pubYear ?? ""),
-      doi: r.doi ?? null,
-      license: r.license ?? null,
-    }));
+      authorString: authors.map((a) => a.name).filter(Boolean).join(", "),
+      journal: String(r.fulljournalname ?? r.source ?? ""),
+      year: /^\d{4}/.exec(String(r.pubdate ?? r.epubdate ?? ""))?.[0] ?? "",
+      doi: articleIds.find((a) => a.idtype === "doi")?.value ?? null,
+      license: null,
+    });
+  }
+  return hits;
 }
 
 /** Find the article folder (PMC123.<version>) and its authoritative metadata JSON. */

@@ -111,11 +111,12 @@ describe("credit and query helpers", () => {
     const long = buildCredit({ ...hit, title: "x".repeat(900) }, "Fig. 1");
     assert.ok(long.length <= 512);
   });
-  it("restricts the Europe PMC query to open, commercial-friendly licenses", () => {
-    const q = buildSearchQuery("pressure ulcer", "PUB_TYPE:\"Case Reports\"");
-    assert.match(q, /OPEN_ACCESS:y/);
-    assert.match(q, /LICENSE:"cc by"/);
-    assert.doesNotMatch(q, /nc/i);
+  it("restricts the NCBI PMC query to open access CC articles", () => {
+    const q = buildSearchQuery("pressure ulcer", "case report[Title]");
+    assert.match(q, /"open access"\[filter\]/);
+    assert.match(q, /"cc by license"\[filter\]/);
+    assert.doesNotMatch(q, /\bnc\b|nd license/i);
+    assert.match(q, /case report\[Title\]/);
   });
 });
 
@@ -123,23 +124,52 @@ describe("network helpers (stubbed fetch)", () => {
   const respond = (body: string, ok = true): ReturnType<FetchLike> =>
     Promise.resolve({ ok, status: ok ? 200 : 404, text: async () => body, arrayBuffer: async () => new ArrayBuffer(0) });
 
-  it("searchArticles maps Europe PMC results and skips hits without a PMCID", async () => {
+  it("searchArticles uses esearch + esummary and maps the results", async () => {
+    const urls: string[] = [];
     const fetchFn: FetchLike = (url) => {
-      assert.match(url, /europepmc/);
+      urls.push(url);
+      assert.match(url, /eutils\.ncbi\.nlm\.nih\.gov/);
+      if (url.includes("esearch.fcgi")) {
+        assert.match(decodeURIComponent(url.replace(/\+/g, " ")), /open access"\[filter\]/);
+        return respond(JSON.stringify({ esearchresult: { idlist: ["111", "bad", "222"] } }));
+      }
+      assert.match(url, /esummary\.fcgi/);
+      assert.match(url, /id=111%2C222/);
       return respond(
         JSON.stringify({
-          resultList: {
-            result: [
-              { pmcid: "PMC1", title: "A <i>title</i>", authorString: "Doe J.", journalInfo: { journal: { title: "J" } }, pubYear: 2020, license: "cc by" },
-              { title: "no pmcid" },
-            ],
+          result: {
+            uids: ["111", "222"],
+            "111": {
+              title: "A <i>title</i>",
+              authors: [{ name: "Doe J" }, { name: "Roe A" }],
+              fulljournalname: "Journal of Flaps",
+              pubdate: "2020 Mar 4",
+              articleids: [{ idtype: "pmcid", value: "PMC111" }, { idtype: "doi", value: "10.1/x" }],
+            },
+            "222": { title: "No ids", source: "J", pubdate: "2019" },
           },
         })
       );
     };
     const hits = await searchArticles(fetchFn, "flap");
-    assert.equal(hits.length, 1);
+    assert.equal(urls.length, 2);
+    assert.equal(hits.length, 2);
+    assert.equal(hits[0].pmcid, "PMC111");
     assert.equal(hits[0].title, "A title");
+    assert.equal(hits[0].authorString, "Doe J, Roe A");
+    assert.equal(hits[0].year, "2020");
+    assert.equal(hits[0].doi, "10.1/x");
+    assert.equal(hits[1].pmcid, "PMC222", "falls back to the uid");
+  });
+
+  it("searchArticles returns nothing (and skips esummary) when esearch is empty", async () => {
+    let calls = 0;
+    const fetchFn: FetchLike = () => {
+      calls++;
+      return respond(JSON.stringify({ esearchresult: { idlist: [] } }));
+    };
+    assert.deepEqual(await searchArticles(fetchFn, "nothing"), []);
+    assert.equal(calls, 1);
   });
 
   it("fetchArticleMeta picks the latest version and reads license_code", async () => {

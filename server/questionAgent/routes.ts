@@ -296,6 +296,43 @@ export function registerQuestionAgentRoutes(app: Express): void {
       const wantsRemoveImage = truthy(body.removeImage);
       const wantsHide = truthy(body.hide);
 
+      // Reassign: take the image already on another question and attach it to this one.
+      const moveFromId = str(body.moveImageFromQuestionId)?.trim() || null;
+      if (moveFromId) {
+        if (imageUrl) {
+          return res.status(400).json({ message: "moveImageFromQuestionId cannot be combined with imageUrl." });
+        }
+        if (wantsRemoveImage) {
+          return res.status(400).json({ message: "moveImageFromQuestionId cannot be combined with removeImage." });
+        }
+        if (moveFromId === questionId) {
+          return res.status(400).json({ message: "The image source must be a different question." });
+        }
+        const source = await storage.getQuestion(moveFromId);
+        if (!source) return res.status(404).json({ message: `Source question ${moveFromId} not found.` });
+        if (!source.imageUrl) {
+          return res.status(400).json({ message: `Source question ${moveFromId} has no image to move.` });
+        }
+        const pending = await listProposals({ questionId: moveFromId, status: "pending", limit: 1 });
+        if (pending.length > 0) {
+          return res.status(409).json({
+            status: "conflict",
+            message: `Source question ${moveFromId} has a pending proposal (${pending[0].id}). Resolve it first so the two do not fight over the image.`,
+          });
+        }
+        imageUrl = source.imageUrl;
+        imageAlt = source.imageAlt?.trim() || "Clinical image";
+        attribution =
+          source.imageCredit || source.imageLicense || source.imageSourceUrl || source.imageSourcePmcid
+            ? {
+                pmcid: source.imageSourcePmcid ?? null,
+                credit: source.imageCredit ?? "",
+                license: source.imageLicense ?? "",
+                sourceUrl: source.imageSourceUrl ?? null,
+              }
+            : null;
+      }
+
       if (wantsRemoveImage) {
         if (imageUrl) {
           return res.status(400).json({ message: "removeImage cannot be combined with a new imageUrl; attach the replacement instead." });
@@ -416,12 +453,21 @@ export function registerQuestionAgentRoutes(app: Express): void {
         unhide: wantsUnhide,
         removeImage: wantsRemoveImage,
         hide: wantsHide,
+        moveImageFrom: moveFromId,
         rationale,
-        reasons: wantsRemoveImage
-          ? cls.reasons.map((r) =>
-              r.startsWith("Removes the current image") ? `${r} Current image: ${existing.imageUrl}` : r
-            )
-          : cls.reasons,
+        reasons: [
+          ...(wantsRemoveImage
+            ? cls.reasons.map((r) =>
+                r.startsWith("Removes the current image") ? `${r} Current image: ${existing.imageUrl}` : r
+              )
+            : cls.reasons),
+          ...(moveFromId
+            ? [
+                `Moves the image from question ${moveFromId} (${imageUrl}) onto this question.`,
+                ...(existing.imageUrl ? [`Replaces this question's current image: ${existing.imageUrl}`] : []),
+              ]
+            : []),
+        ],
         runId,
       });
       const specialty = (await getQueueItem(questionId))?.specialtyId;

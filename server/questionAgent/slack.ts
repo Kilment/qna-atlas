@@ -30,6 +30,11 @@ export function formatProposalForSlack(
   ];
   if (proposal.unhide) lines.push("• Will unhide the question after applying.");
   if (proposal.removeImage) lines.push("• Will remove the current image and its attribution after applying.");
+  if (proposal.moveImageFrom) {
+    lines.push(
+      `• Will MOVE this image from question \`${escapeForSlack(proposal.moveImageFrom)}\` (it is removed there, and that question is hidden if its stem still promises media).`
+    );
+  }
   if (proposal.hide) lines.push("• Will flag and hide the question after applying."); 
   if (proposal.rationale) lines.push("", `*Agent rationale:* ${escapeForSlack(clip(proposal.rationale, 900))}`);
 

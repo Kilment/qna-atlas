@@ -569,6 +569,8 @@ export const questionAgentProposals = pgTable(
     removeImage: boolean("remove_image").notNull().default(false),
     /** Flag and hide the question when approved (e.g. its image is wrong and no replacement exists). */
     hide: boolean("hide").notNull().default(false),
+    /** Reassign an image: on approval, the image on this question id moves to `questionId`. */
+    moveImageFrom: varchar("move_image_from", { length: 128 }),
     rationale: text("rationale"),
     reasons: jsonb("reasons").$type<string[]>().default([]).notNull(),
     runId: varchar("run_id"),

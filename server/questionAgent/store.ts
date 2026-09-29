@@ -391,6 +391,7 @@ function rowToProposal(r: any): QuestionAgentProposal {
     unhide: r.unhide,
     removeImage: !!r.remove_image,
     hide: !!r.hide,
+    moveImageFrom: r.move_image_from ?? null,
     rationale: r.rationale,
     reasons: Array.isArray(r.reasons) ? r.reasons : [],
     runId: r.run_id,
@@ -414,6 +415,7 @@ export interface NewProposal {
   unhide: boolean;
   removeImage?: boolean;
   hide?: boolean;
+  moveImageFrom?: string | null;
   rationale: string | null;
   reasons: string[];
   runId: string | null;
@@ -428,8 +430,8 @@ export async function createProposal(p: NewProposal): Promise<QuestionAgentPropo
   const res = await pool.query(
     `INSERT INTO question_agent_proposals
        (question_id, base_hash, previous_question, previous_answer, new_question, new_answer,
-        image_url, image_alt, image_attribution, unhide, rationale, reasons, run_id, remove_image, hide)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15)
+        image_url, image_alt, image_attribution, unhide, rationale, reasons, run_id, remove_image, hide, move_image_from)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15,$16)
      RETURNING *`,
     [
       p.questionId,
@@ -447,6 +449,7 @@ export async function createProposal(p: NewProposal): Promise<QuestionAgentPropo
       p.runId,
       !!p.removeImage,
       !!p.hide,
+      p.moveImageFrom ?? null,
     ]
   );
   return rowToProposal(res.rows[0]);
@@ -510,6 +513,20 @@ export async function approveProposal(id: string, decidedBy: string, note?: stri
     };
   }
 
+  // Reassigning an image: the source must still hold exactly the image that was reviewed.
+  let moveSource: Awaited<ReturnType<typeof storage.getQuestion>> | undefined;
+  if (proposal.moveImageFrom) {
+    moveSource = await storage.getQuestion(proposal.moveImageFrom);
+    if (!moveSource || !proposal.imageUrl || moveSource.imageUrl !== proposal.imageUrl) {
+      await markProposal(id, "stale", decidedBy, "The source question no longer holds this image.");
+      return {
+        ok: false,
+        httpStatus: 409,
+        message: `Question ${proposal.moveImageFrom} no longer holds the image being moved, so this proposal is stale. Ask the agent to redo it.`,
+      };
+    }
+  }
+
   if (proposal.newQuestion != null && proposal.newAnswer != null) {
     const errors = validateTextFields(proposal.newQuestion, proposal.newAnswer);
     if (errors.length > 0) {
@@ -535,6 +552,17 @@ export async function approveProposal(id: string, decidedBy: string, note?: stri
       proposal.imageAttribution ?? null
     );
     if (!ok) return { ok: false, httpStatus: 500, message: "Failed to attach the image." };
+  }
+
+  if (moveSource) {
+    // The image now lives on the target; take it off the source so it is not shown on both.
+    const cleared = await storage.updateQuestionImage(moveSource.id, null, null, null);
+    if (!cleared) return { ok: false, httpStatus: 500, message: "Attached the image but failed to detach it from the source question." };
+    // A source stem that still promises media must not stay live without one.
+    if (detectMediaPromise(moveSource.question, false)) {
+      const hidden = await storage.flagQuestion(moveSource.id, "image-moved");
+      if (!hidden) return { ok: false, httpStatus: 500, message: "Moved the image but failed to hide the source question." };
+    }
   }
 
   if (proposal.removeImage) {
