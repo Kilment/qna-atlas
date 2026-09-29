@@ -9,6 +9,7 @@
  *
  * Pure functions only, so the same logic can be unit tested and reused by scripts.
  */
+import { repairMojibake } from "./textEncoding";
 import {
   extractCorrectAnswer,
   extractMcqChoices,
@@ -230,7 +231,14 @@ export function classifyQuestionFix(input: FixInput): FixClassification {
   if (input.wantsRemoveImage) reasons.push("Removes the current image (image changes always need approval).");
   if (input.wantsHide) reasons.push("Flags and hides the question (needs approval).");
 
-  if (!unchanged) {
+  // A pure encoding repair (garbled Mac characters restored, nothing else touched) is always safe.
+  const encodingOnly =
+    !unchanged &&
+    repairMojibake(prevQ).trim() === nextQ.trim() &&
+    repairMojibake(prevA).trim() === nextA.trim();
+  if (encodingOnly) autoChanges.push("encoding_repair");
+
+  if (!unchanged && !encodingOnly) {
     const prevChoices = extractMcqChoices(prevQ);
     const nextChoices = extractMcqChoices(nextQ);
 

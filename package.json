@@ -45,7 +45,7 @@
     "agent:pmc-image": "tsx server/scripts/agent/findPmcImage.ts",
     "agent:pull-prod": "tsx server/scripts/agent/pullProdContent.ts",
     "agent:reconcile": "tsx server/scripts/agent/reconcileDevFixes.ts",
-    "test:question-agent": "tsx --test server/questionAgent/tiers.test.ts server/questionAgent/auth.test.ts server/questionAgent/pmcFigures.test.ts server/questionAgent/contentSync.test.ts server/questionAgent/api.test.ts"
+    "test:question-agent": "tsx --test server/questionAgent/tiers.test.ts server/questionAgent/auth.test.ts server/questionAgent/pmcFigures.test.ts server/questionAgent/contentSync.test.ts server/questionAgent/textEncoding.test.ts server/questionAgent/api.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

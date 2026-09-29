@@ -365,7 +365,7 @@ describe("question agent API", { skip: !hasDb }, () => {
     assert.ok(r.json.reasons.some((x: string) => x.includes(q.image_url)), "reviewer sees which image is removed");
     const removalPage = await reviewHtml(r.json.proposalId);
     assert.ok(removalPage.includes(`<img src="${q.image_url}"`), "review page shows the image that would be removed");
-    assert.match(removalPage, /will be removed/);
+    assert.match(removalPage, /will remove/i);
     let row = await current();
     assert.equal(row.image_url, q.image_url, "image must stay until approval");
     assert.equal(row.visible, true);
@@ -424,7 +424,7 @@ describe("question agent API", { skip: !hasDb }, () => {
     const movePage = await reviewHtml(r.json.proposalId);
     assert.ok(movePage.includes('<img src="/question-images/zz-move-test.jpg"'), "review page shows the proposed image");
     assert.ok(movePage.includes(SRC), "review page shows the source question");
-    assert.match(movePage, /Proposed image/);
+    assert.match(movePage, /Proposed image/i);
     let target = await current();
     let source = (await pool.query(`SELECT * FROM questions WHERE id = $1`, [SRC])).rows[0];
     assert.equal(target.image_url, null, "nothing moves before approval");

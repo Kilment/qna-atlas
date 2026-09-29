@@ -3,6 +3,8 @@
  * Node-safe: no DOM (document.createElement). Keeps output identical to current parseQuestions.
  */
 
+import { repairMojibake } from "./textEncoding";
+
 const entityMap: Record<string, string> = {
   '&rsquo;': "'",
   '&lsquo;': "'",
@@ -22,7 +24,9 @@ const entityMap: Record<string, string> = {
 
 /** Node-safe decode. Same entityMap + unicode normalizations as parseQuestions. Replaces textarea fallback with &#decimal; / &#xhex; handling. */
 export function decodeHtmlEntities(text: string): string {
-  let result = text;
+  // Restore Mac text-encoding damage (e.g. "‚Äì" for an en dash) BEFORE the accent stripping below
+  // destroys the evidence and leaves unrecoverable fragments such as "‚Äi".
+  let result = repairMojibake(text);
   for (const [entity, char] of Object.entries(entityMap)) {
     result = result.replace(new RegExp(entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), char);
   }

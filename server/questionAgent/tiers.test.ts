@@ -171,3 +171,20 @@ describe("word-level cosmetic guard", () => {
     assert.equal(isCosmeticEdit("Free flap loss", "Free-flap loss."), true);
   });
 });
+
+
+describe("encoding repair tier", () => {
+  it("treats a pure mojibake repair as auto, even when it changes numbers and words after normalization", () => {
+    const prevQ = "A 45-year-old man presents for reconstruction of a 6 \u221ao 11-mm defect of the nose.\nA) 0\u201a\u00c4i4 weeks\nB) 5\u201a\u00c4i8 weeks\nC) 9\u201a\u00c4i13 weeks";
+    const nextQ = "A 45-year-old man presents for reconstruction of a 6 \u00d7 11-mm defect of the nose.\nA) 0\u20134 weeks\nB) 5\u20138 weeks\nC) 9\u201313 weeks";
+    const r = classifyQuestionFix({ previousQuestion: prevQ, previousAnswer: "B)\nThe patient\u201a\u00c4os wound heals.", nextQuestion: nextQ, nextAnswer: "B)\nThe patient\u2019s wound heals." });
+    assert.equal(r.tier, "auto");
+    assert.deepEqual(r.autoChanges, ["encoding_repair"]);
+  });
+  it("does not let an encoding repair hide other edits", () => {
+    const prevQ = "A 6 \u221ao 11-mm defect. Which is best?\nA) One\nB) Two";
+    const nextQ = "A 6 \u00d7 11-mm defect of the foot. Which is best?\nA) One\nB) Two";
+    const r = classifyQuestionFix({ previousQuestion: prevQ, previousAnswer: "A)\nBecause.", nextQuestion: nextQ, nextAnswer: "A)\nBecause." });
+    assert.notEqual(r.autoChanges[0], "encoding_repair");
+  });
+});
