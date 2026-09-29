@@ -63,7 +63,7 @@ Set these in the **production deployment's Secrets** (not `.replit`):
 | `CANONICAL_PUBLIC_ORIGIN` | Public origin used to build review links, for example `https://prs-atlas.com` |
 | `SLACK_QUESTION_AGENT_WEBHOOK_URL` | Slack incoming webhook for proposals (falls back to the question-reports webhook) |
 | Image bucket | Either Replit Object Storage (`IMAGE_BUCKET_ID`, or the default bucket) or S3 (`S3_BUCKET`, `S3_REGION`, optional `S3_ENDPOINT`, plus standard AWS credentials). Force with `QUESTION_AGENT_IMAGE_DRIVER=replit|s3`. The `local` driver writes to `server/data/agent-images` and is for development only |
-| `QUESTION_AGENT_MAX_AUTO_PER_RUN` (25), `QUESTION_AGENT_MAX_AUTO_PER_DAY` (100), `QUESTION_AGENT_MAX_PROPOSALS_PER_RUN` (50) | Optional caps |
+| `QUESTION_AGENT_MAX_AUTO_PER_RUN` (25), `QUESTION_AGENT_MAX_AUTO_PER_DAY` (200), `QUESTION_AGENT_MAX_PROPOSALS_PER_RUN` (50) | Optional caps |
 | `ADMIN_CODE` | **Must be set in production.** See the security changes below |
 
 Set these in the **Cursor cloud agent environment**: `QUESTION_AGENT_BASE_URL` (the live app),

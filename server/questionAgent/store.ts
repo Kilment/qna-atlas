@@ -42,7 +42,7 @@ function intEnv(name: string, fallback: number): number {
 export function agentCaps() {
   return {
     autoPerRun: intEnv("QUESTION_AGENT_MAX_AUTO_PER_RUN", 25),
-    autoPerDay: intEnv("QUESTION_AGENT_MAX_AUTO_PER_DAY", 100),
+    autoPerDay: intEnv("QUESTION_AGENT_MAX_AUTO_PER_DAY", 200),
     proposalsPerRun: intEnv("QUESTION_AGENT_MAX_PROPOSALS_PER_RUN", 50),
   };
 }
