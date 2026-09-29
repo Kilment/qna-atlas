@@ -132,7 +132,62 @@ export function isCosmeticEdit(before: string, after: string, minSimilarity = 0.
   if (textSimilarity(before, after) < minSimilarity) return false;
   if (!sameList(numberTokens(before), numberTokens(after))) return false;
   if (!sameList(meaningTokens(before), meaningTokens(after))) return false;
-  return true;
+  return onlyTypoWordChanges(before, after);
+}
+
+/** A replaced word counts as a typo fix only when it is long enough that a small edit cannot be another word. */
+function isTypoPair(a: string, b: string): boolean {
+  const len = Math.max(a.length, b.length);
+  if (len < 7) return false;
+  return levenshtein(a, b) <= (len >= 11 ? 2 : 1);
+}
+
+/**
+ * Word-level guard on top of character similarity: in a long stem a single swapped word
+ * ("cup" -> "prominent", "fascial" -> "myofascial", "woman" -> "man") barely moves the
+ * similarity score, so every changed word must look like a typo fix, a split/joined word,
+ * or a spelling of the same word.
+ */
+function onlyTypoWordChanges(before: string, after: string): boolean {
+  const words = (t: string) =>
+    normalizeForCompare(t)
+      .split(" ")
+      .map((w) => w.replace(/\.+$/, ""))
+      .filter(Boolean);
+  const a = words(before);
+  const b = words(after);
+  if (a.length * b.length > 4_000_000) return false;
+  // Longest common subsequence table.
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  let i = 0;
+  let j = 0;
+  let removed: string[] = [];
+  let added: string[] = [];
+  const groupOk = (): boolean => {
+    if (removed.length === 0 && added.length === 0) return true;
+    if (removed.join("") === added.join("")) return true; // words split or joined
+    if (removed.length !== added.length) return false;
+    return removed.every((w, k) => isTypoPair(w, added[k]));
+  };
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && a[i] === b[j]) {
+      if (!groupOk()) return false;
+      removed = [];
+      added = [];
+      i++;
+      j++;
+    } else if (j >= b.length || (i < a.length && dp[i + 1][j] >= dp[i][j + 1])) {
+      removed.push(a[i++]);
+    } else {
+      added.push(b[j++]);
+    }
+  }
+  return groupOk();
 }
 
 /** Remove "a photograph is shown" style phrases. */

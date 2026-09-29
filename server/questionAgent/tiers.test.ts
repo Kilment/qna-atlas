@@ -157,3 +157,17 @@ describe("assessImageLicense", () => {
     }
   });
 });
+
+describe("word-level cosmetic guard", () => {
+  it("rejects single swapped content words even in long text", () => {
+    const stem = "A 7-year-old female is evaluated by her parents for protruding ears. Clinical examination reveals a typical cup ear malformation. Surgical repair is being considered. What represents the most probable postoperative complication?";
+    assert.equal(isCosmeticEdit(stem, stem.replace("cup ear malformation", "prominent ear deformity")), false);
+    assert.equal(isCosmeticEdit("C) Regional fascial flap combined with skin advancement flap", "C) Regional myofascial flap combined with skin advancement flap"), false);
+    assert.equal(isCosmeticEdit("A) Ileum graft from the donor site", "A) Ilium graft from the donor site"), false);
+  });
+  it("still accepts real typo fixes, joined words and punctuation", () => {
+    assert.equal(isCosmeticEdit("The patient underwent reconstuction of the breast with a free flap.", "The patient underwent reconstruction of the breast with a free flap."), true);
+    assert.equal(isCosmeticEdit("Use a co-axial approach", "Use a coaxial approach"), true);
+    assert.equal(isCosmeticEdit("Free flap loss", "Free-flap loss."), true);
+  });
+});
