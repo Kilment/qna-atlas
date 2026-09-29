@@ -26,6 +26,10 @@ export interface FixInput {
   hasImageChange?: boolean;
   /** Agent wants to unflag / make a hidden question visible again. */
   wantsUnhide?: boolean;
+  /** Agent wants to detach the current image (it does not match the question). */
+  wantsRemoveImage?: boolean;
+  /** Agent wants to flag and hide the question. */
+  wantsHide?: boolean;
 }
 
 export interface FixClassification {
@@ -223,6 +227,8 @@ export function classifyQuestionFix(input: FixInput): FixClassification {
 
   if (input.hasImageChange) reasons.push("Attaches or replaces an image (image changes always need approval).");
   if (input.wantsUnhide) reasons.push("Unhides or unflags a question (needs approval).");
+  if (input.wantsRemoveImage) reasons.push("Removes the current image (image changes always need approval).");
+  if (input.wantsHide) reasons.push("Flags and hides the question (needs approval).");
 
   if (!unchanged) {
     const prevChoices = extractMcqChoices(prevQ);

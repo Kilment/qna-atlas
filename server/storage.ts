@@ -1881,6 +1881,12 @@ export class DatabaseStorage implements IStorage {
       )
     `);
     await pool.query(
+      `ALTER TABLE "question_agent_proposals" ADD COLUMN IF NOT EXISTS "remove_image" boolean DEFAULT false NOT NULL`
+    );
+    await pool.query(
+      `ALTER TABLE "question_agent_proposals" ADD COLUMN IF NOT EXISTS "hide" boolean DEFAULT false NOT NULL`
+    );
+    await pool.query(
       `CREATE INDEX IF NOT EXISTS "idx_question_agent_proposals_question_id" ON "question_agent_proposals" ("question_id")`
     );
     await pool.query(

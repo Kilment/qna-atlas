@@ -62,6 +62,7 @@ import {
   validateTextFields,
   type QueueCategory,
 } from "./store";
+import { detectMediaPromise } from "../../shared/questionMediaHeuristics";
 import { renderMessagePage, renderReviewPage } from "./reviewPage";
 import { notifyAutoAppliedSlack, notifyProposalSlack } from "./slack";
 import { createHash } from "crypto";
@@ -292,6 +293,28 @@ export function registerQuestionAgentRoutes(app: Express): void {
         if (!stored) return res.status(400).json({ message: "That image was not found in storage. Upload it first." });
       }
       const wantsUnhide = truthy(body.unhide);
+      const wantsRemoveImage = truthy(body.removeImage);
+      const wantsHide = truthy(body.hide);
+
+      if (wantsRemoveImage) {
+        if (imageUrl) {
+          return res.status(400).json({ message: "removeImage cannot be combined with a new imageUrl; attach the replacement instead." });
+        }
+        if (!existing.imageUrl) {
+          return res.status(400).json({ message: "This question has no image to remove." });
+        }
+        // Removing the image must not leave a live question that still points at it.
+        const promise = detectMediaPromise(nextQuestion, false);
+        if (promise && !wantsHide) {
+          return res.status(400).json({
+            status: "invalid",
+            message: `The stem still promises ${promise.kind} ("${promise.match}"). Send hide: true together with removeImage, or fix the stem first.`,
+          });
+        }
+      }
+      if (wantsHide && wantsUnhide) {
+        return res.status(400).json({ message: "hide and unhide cannot be combined." });
+      }
 
       if (wantsUnhide) {
         const blockers = unhideBlockers(nextQuestion, !!imageUrl || !!existing.imageUrl);
@@ -303,9 +326,9 @@ export function registerQuestionAgentRoutes(app: Express): void {
       const cls = classify(
         { question: existing.question, answer: existing.answer },
         { question: nextQuestion, answer: nextAnswer },
-        { hasImageChange: !!imageUrl, wantsUnhide }
+        { hasImageChange: !!imageUrl, wantsUnhide, wantsRemoveImage, wantsHide }
       );
-      const noOp = cls.unchanged && !imageUrl && !wantsUnhide;
+      const noOp = cls.unchanged && !imageUrl && !wantsUnhide && !wantsRemoveImage && !wantsHide;
       if (noOp) return res.json({ status: "unchanged", questionId, baseHash: currentHash });
 
       const caps = agentCaps();
@@ -391,8 +414,14 @@ export function registerQuestionAgentRoutes(app: Express): void {
         imageAlt,
         imageAttribution: attribution,
         unhide: wantsUnhide,
+        removeImage: wantsRemoveImage,
+        hide: wantsHide,
         rationale,
-        reasons: cls.reasons,
+        reasons: wantsRemoveImage
+          ? cls.reasons.map((r) =>
+              r.startsWith("Removes the current image") ? `${r} Current image: ${existing.imageUrl}` : r
+            )
+          : cls.reasons,
         runId,
       });
       const specialty = (await getQueueItem(questionId))?.specialtyId;
@@ -401,7 +430,7 @@ export function registerQuestionAgentRoutes(app: Express): void {
         status: "proposed",
         tier: "proposal",
         proposalId: proposal.id,
-        reasons: cls.reasons,
+        reasons: proposal.reasons,
         slackNotified,
         reviewLinkConfigured: !!approvalSecret(),
       });

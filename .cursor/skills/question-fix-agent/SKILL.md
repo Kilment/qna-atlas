@@ -67,6 +67,18 @@ All API access goes through `npm run agent:api -- <command>`; image search throu
 7. Finish with a summary: applied (ids and one-line reasons), proposed (ids and proposal ids),
    skipped (ids and why), and any errors. Do not include the token or full stack traces.
 
+## Wrong images
+
+A reported or audited question may already have an image that does not match its stem (wrong body
+part or side, wrong modality, wrong condition, a figure from an unrelated study). Open the
+image at `<BASE_URL><imageUrl>` and compare it with the stem and key.
+- If a better licensed image exists, attach it with `imageUrl` (this replaces the old one).
+- If none exists, file `{"removeImage": true, "hide": true, ...}` (with `baseHash` and a
+  `rationale` that says exactly what the image shows versus what the stem needs). `hide` is
+  required when the stem still refers to the image. Both always become Slack proposals, and the
+  proposal names the current image so the reviewer can check it.
+- If the image is right and the text is wrong, fix the text instead. Do not remove a correct image.
+
 ## Triggered runs (a new question report arrived)
 
 When a webhook or Slack event starts you, the payload is only a hint that new reports exist. It may

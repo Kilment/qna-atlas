@@ -29,6 +29,8 @@ export function formatProposalForSlack(
     ...proposal.reasons.map((r) => `• ${escapeForSlack(r)}`),
   ];
   if (proposal.unhide) lines.push("• Will unhide the question after applying.");
+  if (proposal.removeImage) lines.push("• Will remove the current image and its attribution after applying.");
+  if (proposal.hide) lines.push("• Will flag and hide the question after applying."); 
   if (proposal.rationale) lines.push("", `*Agent rationale:* ${escapeForSlack(clip(proposal.rationale, 900))}`);
 
   if (proposal.newQuestion != null && proposal.newAnswer != null) {

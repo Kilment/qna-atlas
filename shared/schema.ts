@@ -565,6 +565,10 @@ export const questionAgentProposals = pgTable(
     imageAlt: varchar("image_alt", { length: 256 }),
     imageAttribution: jsonb("image_attribution").$type<QuestionImageAttribution | null>(),
     unhide: boolean("unhide").notNull().default(false),
+    /** Detach the current (wrong) image and its attribution when approved. */
+    removeImage: boolean("remove_image").notNull().default(false),
+    /** Flag and hide the question when approved (e.g. its image is wrong and no replacement exists). */
+    hide: boolean("hide").notNull().default(false),
     rationale: text("rationale"),
     reasons: jsonb("reasons").$type<string[]>().default([]).notNull(),
     runId: varchar("run_id"),

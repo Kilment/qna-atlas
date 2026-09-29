@@ -231,7 +231,7 @@ describe("question agent API", { skip: !hasDb }, () => {
     const page = await fetch(`${base}/api/question-agent/review/${proposalId}?exp=${exp}&sig=${sig}`);
     assert.equal(page.status, 200);
     const html = await page.text();
-    assert.match(html, /Approve and apply/);
+    assert.match(html, />Approve</);
     assert.match(html, /key changed/i);
 
     const approve = await fetch(`${base}/api/question-agent/review/${proposalId}`, {
@@ -330,6 +330,47 @@ describe("question agent API", { skip: !hasDb }, () => {
     assert.equal(row.image_license, "CC BY");
     assert.equal(row.image_source_pmcid, "PMC1234567");
     assert.equal(row.image_credit, "Doe J et al.");
+  });
+
+  it("removes a wrong image and hides the question only after approval", async () => {
+    const q = await current();
+    assert.ok(q.image_url, "previous test left an image attached");
+    await pool.query(`UPDATE questions SET visible = true, flagged = false WHERE id = $1`, [QID]);
+    const hash = (await getItem()).item.baseHash;
+
+    // A stem that still promises a photo cannot lose its image while staying live.
+    const promised = q.question.replace(/^/, "A clinical photograph is shown. ");
+    const blocked = await fix({ baseHash: hash, rationale: "wrong image", question: promised, answer: q.answer, removeImage: true });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.json.message, /hide/i);
+
+    const conflict = await fix({ baseHash: hash, rationale: "x", removeImage: true, hide: true, unhide: true });
+    assert.equal(conflict.status, 400);
+
+    const dry = await fix({ baseHash: hash, rationale: "wrong image", removeImage: true, hide: true }, "?dryRun=true");
+    assert.equal(dry.status, 200);
+    assert.equal(dry.json.tier, "proposal");
+
+    const r = await fix({ baseHash: hash, rationale: "The image shows a different condition than the stem.", removeImage: true, hide: true });
+    assert.equal(r.status, 202, JSON.stringify(r.json));
+    assert.ok(r.json.reasons.some((x: string) => x.includes(q.image_url)), "reviewer sees which image is removed");
+    let row = await current();
+    assert.equal(row.image_url, q.image_url, "image must stay until approval");
+    assert.equal(row.visible, true);
+
+    const { approveProposal } = await import("./store");
+    const approved = await approveProposal(r.json.proposalId, "test");
+    assert.equal(approved.ok, true);
+    row = await current();
+    assert.equal(row.image_url, null);
+    assert.equal(row.image_credit, null);
+    assert.equal(row.image_license, null);
+    assert.equal(row.flagged, true);
+    assert.equal(row.visible, false);
+
+    const none = await fix({ baseHash: (await getItem()).item.baseHash, rationale: "x", removeImage: true, hide: true });
+    assert.equal(none.status, 400, "nothing left to remove");
+    assert.match(none.json.message, /no image/i);
   });
 
   it("refuses to unhide while the stem still promises media", async () => {

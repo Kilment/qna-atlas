@@ -81,7 +81,9 @@ export function renderReviewPage(params: {
     `<h1>Question Agent Proposal <code>${escapeHtml(p.questionId)}</code></h1>
      <div class="reasons"><strong>Needs Approval Because:</strong><ul>${p.reasons
        .map((r) => `<li>${escapeHtml(r)}</li>`)
-       .join("")}${p.unhide ? "<li>Will unhide the question after applying.</li>" : ""}</ul></div>
+       .join("")}${p.unhide ? "<li>Will unhide the question after applying.</li>" : ""}${
+       p.removeImage ? "<li>Will remove the current image and its attribution after applying.</li>" : ""
+     }${p.hide ? "<li>Will flag and hide the question after applying.</li>" : ""}</ul></div>
      ${p.rationale ? `<p><strong>Agent Rationale:</strong> ${escapeHtml(p.rationale)}</p>` : ""}
      <div class="cols">
        <div class="card"><h2>${changed ? "Before" : "Current"}</h2>${questionHtml(p.previousQuestion, p.previousAnswer)}</div>

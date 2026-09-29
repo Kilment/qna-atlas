@@ -272,7 +272,7 @@ export function unhideBlockers(questionText: string, hasImage: boolean): string[
 export function classify(
   existing: { question: string; answer: string },
   next: { question: string; answer: string },
-  opts: { hasImageChange: boolean; wantsUnhide: boolean }
+  opts: { hasImageChange: boolean; wantsUnhide: boolean; wantsRemoveImage?: boolean; wantsHide?: boolean }
 ): FixClassification {
   return classifyQuestionFix({
     previousQuestion: existing.question,
@@ -281,6 +281,8 @@ export function classify(
     nextAnswer: next.answer,
     hasImageChange: opts.hasImageChange,
     wantsUnhide: opts.wantsUnhide,
+    wantsRemoveImage: opts.wantsRemoveImage,
+    wantsHide: opts.wantsHide,
   });
 }
 
@@ -387,6 +389,8 @@ function rowToProposal(r: any): QuestionAgentProposal {
     imageAlt: r.image_alt,
     imageAttribution: r.image_attribution ?? null,
     unhide: r.unhide,
+    removeImage: !!r.remove_image,
+    hide: !!r.hide,
     rationale: r.rationale,
     reasons: Array.isArray(r.reasons) ? r.reasons : [],
     runId: r.run_id,
@@ -408,6 +412,8 @@ export interface NewProposal {
   imageAlt: string | null;
   imageAttribution: QuestionImageAttribution | null;
   unhide: boolean;
+  removeImage?: boolean;
+  hide?: boolean;
   rationale: string | null;
   reasons: string[];
   runId: string | null;
@@ -422,8 +428,8 @@ export async function createProposal(p: NewProposal): Promise<QuestionAgentPropo
   const res = await pool.query(
     `INSERT INTO question_agent_proposals
        (question_id, base_hash, previous_question, previous_answer, new_question, new_answer,
-        image_url, image_alt, image_attribution, unhide, rationale, reasons, run_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12::jsonb,$13)
+        image_url, image_alt, image_attribution, unhide, rationale, reasons, run_id, remove_image, hide)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15)
      RETURNING *`,
     [
       p.questionId,
@@ -439,6 +445,8 @@ export async function createProposal(p: NewProposal): Promise<QuestionAgentPropo
       p.rationale,
       JSON.stringify(p.reasons),
       p.runId,
+      !!p.removeImage,
+      !!p.hide,
     ]
   );
   return rowToProposal(res.rows[0]);
@@ -527,6 +535,16 @@ export async function approveProposal(id: string, decidedBy: string, note?: stri
       proposal.imageAttribution ?? null
     );
     if (!ok) return { ok: false, httpStatus: 500, message: "Failed to attach the image." };
+  }
+
+  if (proposal.removeImage) {
+    const ok = await storage.updateQuestionImage(proposal.questionId, null, null, null);
+    if (!ok) return { ok: false, httpStatus: 500, message: "Failed to remove the image." };
+  }
+
+  if (proposal.hide) {
+    const ok = await storage.flagQuestion(proposal.questionId, "image-mismatch");
+    if (!ok) return { ok: false, httpStatus: 500, message: "Failed to hide the question." };
   }
 
   let unhide: { ok: boolean; blockers: string[] } | undefined;

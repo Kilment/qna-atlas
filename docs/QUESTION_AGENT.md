@@ -22,7 +22,7 @@ Defined in `shared/questionAgentTiers.ts` (covered by `server/questionAgent/tier
 | Tier | Changes | Result |
 | --- | --- | --- |
 | Auto-apply | typos and formatting; explanation wording with the key unchanged; removing "photograph is shown" phrases; cosmetic choice wording (similarity >= 0.9, >= 0.95 for the keyed choice, identical numbers and identical meaning-flipping words) | Applied at once, revision recorded, short Slack note |
-| Proposal | key letter change; choice count or letters changed; non-cosmetic choice or stem change; drastic explanation shortening; unhide; **any image attach or replace** | Stored as a pending proposal, Slack message with a signed review link |
+| Proposal | key letter change; choice count or letters changed; non-cosmetic choice or stem change (including a swapped content word or a changed patient sex, age term or pronoun); drastic explanation shortening; unhide; hide; **any image attach, replace or removal** | Stored as a pending proposal, Slack message with a signed review link |
 
 Images are never auto-published.
 
@@ -35,7 +35,7 @@ wrong token returns 404 (the API does not advertise itself) and repeated failure
 | --- | --- |
 | `GET /queue?category=reported,flagged,missing_media&specialty=&limit=&offset=&includePending=` | Work queue with `baseHash`, reports, media-promise detection, `pendingProposalId` |
 | `GET /question/:id` | One question with recent revisions and proposals |
-| `POST /fix` (`?dryRun=true`) | Submit a fix. Requires `questionId`, `runId`, `rationale`, `baseHash`. Optional `question`+`answer`, `imageUrl`+`imageAlt`+`imageAttribution`, `unhide` |
+| `POST /fix` (`?dryRun=true`) | Submit a fix. Requires `questionId`, `runId`, `rationale`, `baseHash`. Optional `question`+`answer`, `imageUrl`+`imageAlt`+`imageAttribution`, `unhide`, `removeImage` (detach a wrong image), `hide` (flag and hide the question). Image removal and hiding are always proposals; `removeImage` needs `hide` if the stem still refers to an image |
 | `POST /image` (multipart `file`) | Upload an image (5 MB, JPEG/PNG/WebP/GIF, magic-byte checked) to the bucket |
 | `POST /revert` | Undo a revision (`revisionId`, `runId`, `rationale`) |
 | `GET /proposals` | List proposals |
