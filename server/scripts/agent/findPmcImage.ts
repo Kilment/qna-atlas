@@ -210,7 +210,7 @@ async function main() {
         rejected.push({ pmcid: fig.pmcid, figId: fig.figId, reason: prepared.reject });
         continue;
       }
-      const candidate: ScoredCandidate = { ...fig, ...prepared, suggestedAlt: "Clinical image" };
+      const candidate: ScoredCandidate = { ...fig, ...prepared, suggestedAlt: "Clinical Image" };
       if (client && question) {
         try {
           candidate.score = await scoreWithVision(client, model, question, candidate, minScore);

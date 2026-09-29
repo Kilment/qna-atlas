@@ -95,6 +95,11 @@ describe("vetArticleFigures", () => {
     assert.match(reasons.f3, /pressure ulcer/);
     assert.match(reasons.f4, /own permissions/);
   });
+  it("rejects figures whose article title (shown in the credit line) reveals the answer", () => {
+    const { accepted, rejected } = vetArticleFigures({ hit, meta, figures: parseFigures(XML), avoidTerms: ["sacral pressure injuries"] });
+    assert.equal(accepted.length, 0);
+    assert.ok(rejected.some((r) => /article title/.test(r.reason)));
+  });
   it("rejects whole articles with NC/ND licenses or retractions", () => {
     const nc = vetArticleFigures({ hit, meta: { ...meta, licenseCode: "CC BY-NC" }, figures: parseFigures(XML), avoidTerms: [] });
     assert.equal(nc.accepted.length, 0);

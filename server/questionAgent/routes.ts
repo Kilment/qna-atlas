@@ -331,7 +331,7 @@ export function registerQuestionAgentRoutes(app: Express): void {
         }
         supersedeOnFile = pending.map((p) => p.id);
         imageUrl = source.imageUrl;
-        imageAlt = source.imageAlt?.trim() || "Clinical image";
+        imageAlt = source.imageAlt?.trim() || "Clinical Image";
         attribution =
           source.imageCredit || source.imageLicense || source.imageSourceUrl || source.imageSourcePmcid
             ? {
@@ -635,7 +635,7 @@ export function registerQuestionAgentRoutes(app: Express): void {
           ? await approveProposal(paramOf(req.params.id), "slack-review-link")
           : await rejectProposal(paramOf(req.params.id), "slack-review-link");
       if (!result.ok) {
-        return res.status(result.httpStatus).send(renderMessagePage("Not applied", result.message));
+        return res.status(result.httpStatus).send(renderMessagePage("Not Applied", result.message));
       }
       if (result.status === "approved") {
         const extra =

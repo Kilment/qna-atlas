@@ -62,13 +62,13 @@ export function renderReviewPage(params: {
   const cur = params.currentImage;
   const currentCard = cur?.url
     ? `<div class="card"><h2>${
-        p.removeImage ? "Current image (will be removed)" : p.imageUrl ? "Current image (will be replaced)" : "Current image"
+        p.removeImage ? "Current Image (Will Remove)" : p.imageUrl ? "Current Image (Will Remove)" : "Current Image"
       }</h2><img src="${escapeHtml(cur.url)}" alt="${escapeHtml(cur.alt ?? "")}"><p><small>${escapeHtml(cur.url)}</small></p></div>`
     : p.removeImage || p.imageUrl
-      ? `<div class="card"><h2>Current image</h2><p>This question has no image right now.</p></div>`
+      ? `<div class="card"><h2>Current Image</h2><p>This question has no image right now.</p></div>`
       : "";
   const proposedCard = p.imageUrl
-    ? `<div class="card"><h2>Proposed image${p.moveImageFrom ? " (moved from another question)" : ""}</h2><img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.imageAlt ?? "")}">
+    ? `<div class="card"><h2>Proposed Image${p.moveImageFrom ? " (Moved)" : ""}</h2><img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.imageAlt ?? "")}">
        <p>${escapeHtml(p.imageAlt ?? "")}</p>
        ${
          a

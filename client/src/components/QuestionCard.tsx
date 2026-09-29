@@ -439,7 +439,7 @@ export function QuestionCard({
             {question.imageUrl && (
               <QuestionImage
                 src={question.imageUrl}
-                alt={question.imageAlt ?? 'Clinical image'}
+                alt={question.imageAlt ?? 'Clinical Image'}
                 attribution={question.imageAttribution}
                 className="mb-4"
               />

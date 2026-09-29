@@ -12,7 +12,7 @@ export const questionMarkdownComponents: Components = {
     return (
       <QuestionImage
         src={src}
-        alt={typeof alt === 'string' && alt.trim() ? alt : 'Clinical image'}
+        alt={typeof alt === 'string' && alt.trim() ? alt : 'Clinical Image'}
         className="my-3"
       />
     );

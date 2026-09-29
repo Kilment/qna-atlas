@@ -15,7 +15,7 @@ function attributionText(a: ImageAttribution): string {
   return [a.credit, a.license, a.pmcid].filter(Boolean).join(' | ');
 }
 
-export function QuestionImage({ src, alt = 'Clinical image', className, attribution }: QuestionImageProps) {
+export function QuestionImage({ src, alt = 'Clinical Image', className, attribution }: QuestionImageProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const credit = attribution ? attributionText(attribution) : '';
   const safeSourceUrl =

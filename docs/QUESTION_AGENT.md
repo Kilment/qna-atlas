@@ -67,7 +67,9 @@ Set these in the **production deployment's Secrets** (not `.replit`):
 | `ADMIN_CODE` | **Must be set in production.** See the security changes below |
 
 Set these in the **Cursor cloud agent environment**: `QUESTION_AGENT_BASE_URL` (the live app),
-`QUESTION_AGENT_TOKEN`, and optionally `ANTHROPIC_API_KEY` for `--score`.
+`QUESTION_AGENT_TOKEN`, `CLAUDE_API_KEY` or `ANTHROPIC_API_KEY` (required for the two-model vision
+check on images; also enables optional `agent:pmc-image --score`), and optionally `NCBI_API_KEY` /
+`NCBI_CONTACT_EMAIL` for NCBI E-utilities.
 
 Why a bucket: Replit Autoscale deployments have an ephemeral, unshared disk, so files written by
 one instance vanish and are invisible to others. Agent images are stored in the bucket and served
@@ -78,15 +80,24 @@ by the app at `/question-images/agent/<uuid>.<ext>` (nosniff, immutable caching)
 - Source: NCBI PMC search (E-utilities `esearch`/`esummary`, `open access` + CC BY / CC0 / CC BY-SA
   license filters; optional `NCBI_API_KEY` and `NCBI_CONTACT_EMAIL` env vars), then the public PMC Open Access
   dataset for per-article metadata (authoritative license), XML and figures (`npm run agent:pmc-image`).
+  Prefer `[Title]` phrase queries; broad queries return too many weak hits. Retries on 429/5xx are
+  built in.
 - Allowed licenses: CC0, CC BY, CC BY-SA, public domain. NC and ND licenses are rejected in the tool
   **and** again on the server (`shared/imageLicense.ts`).
 - Figures that look third party (reproduced, adapted, copyright, courtesy of, or their own
-  permissions block) are rejected. Captions that leak the diagnosis are rejected.
-- Images are downscaled to at most 1600 px and re-encoded to JPEG; they are never cropped.
+  permissions block) are rejected. Captions **and article titles** that leak the diagnosis (via
+  `--avoid`) are rejected — the credit line includes the article title and is shown under the image.
+  Do not strip the title from attribution; pick a non-leaking article or reword the question.
+- Downloaded candidates are downscaled to at most 1600 px and re-encoded to JPEG; they are never cropped.
 - Attribution (credit, license, PMCID, source link) is stored on the question and shown under the
   image in the app.
-- `--score` adds a vision check with `QUESTION_AGENT_VISION_MODEL` (default `claude-opus-5`), but
-  the runbook still requires the agent to open and inspect each image.
+- Authoritative image acceptance is a **two-model** Anthropic vision check (Opus 4.5
+  `claude-opus-4-5` and Sonnet 4.5 `claude-sonnet-4-5`, image ≤1568 px JPEG). The Read tool’s text
+  description of images is not reliable. Optional `agent:pmc-image --score` is only a single-model
+  pre-screen (`QUESTION_AGENT_VISION_MODEL`, default `claude-opus-5` in the script).
+- If no acceptable licensed image is found after a reasonable search, **reword** the question so it
+  does not require imaging (remove media phrases, describe the finding in text, remove the image /
+  unhide as needed). Hide only as a last resort, always as a Slack proposal.
 
 ## Content pipeline interaction
 
@@ -133,16 +144,19 @@ proposals. Rows that are new in the workspace travel with a normal deploy.
 per week). Both record to the same revision table, so every change is auditable and revertible. The
 cloud agent's `baseHash` check protects it from overwriting a change made after it read the
 question, but the feedback job is not aware of the agent, so they can both work on the same
-reported question. To avoid duplicate effort, either disable one (`FEEDBACK_AGENT_ENABLED`), or leave the feedback job for
-reported questions and point the cloud agent at `flagged,missing_media` with
-`--category`. The cloud agent's own caps are the three `QUESTION_AGENT_MAX_*` variables above.
+reported question. The cloud-agent runbook works **`reported` first**, then `flagged`, then
+`missing_media`. To avoid duplicate effort with the feedback job, either disable one
+(`FEEDBACK_AGENT_ENABLED`), or point one of them away from `reported`. Filing a new proposal
+supersedes any pending proposal on the same question. The cloud agent's own caps are the three
+`QUESTION_AGENT_MAX_*` variables above.
 
 ## Scheduling
 
 Use Cursor Automations to run the cloud agent on a schedule (for example weekly). Point it at this
-repository, give it the runbook skill `question-fix-agent`, and add `QUESTION_AGENT_BASE_URL` and
-`QUESTION_AGENT_TOKEN` as its secrets. This is a separate interactive setup in Cursor and has not
-been created for you.
+repository, give it the runbook skill `question-fix-agent`, paste the prompt from
+`docs/QUESTION_AGENT_CLOUD_PROMPT.md`, and add `QUESTION_AGENT_BASE_URL`, `QUESTION_AGENT_TOKEN`,
+and `CLAUDE_API_KEY` or `ANTHROPIC_API_KEY` as its secrets (plus optional NCBI keys). This is a
+separate interactive setup in Cursor and has not been created for you.
 
 ## Dry runs and the first pilot
 

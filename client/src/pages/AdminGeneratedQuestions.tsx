@@ -153,7 +153,7 @@ export default function AdminGeneratedQuestions() {
         return;
       }
       const { url } = await uploadRes.json();
-      const alt = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Clinical image";
+      const alt = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Clinical Image";
       const patchRes = await fetch(`/api/questions/${id}`, {
         method: "PATCH",
         headers: {
@@ -325,7 +325,7 @@ export default function AdminGeneratedQuestions() {
                     {q?.imageUrl && (
                       <QuestionImage
                         src={q.imageUrl}
-                        alt={q.imageAlt ?? "Clinical image"}
+                        alt={q.imageAlt ?? "Clinical Image"}
                         className="mb-3"
                       />
                     )}

@@ -76,7 +76,7 @@ function parseArgs(argv: string[]) {
 
 function altFromFilename(filename: string): string {
   const base = path.basename(filename, path.extname(filename));
-  return base.replace(/[-_]+/g, " ").trim() || "Clinical image";
+  return base.replace(/[-_]+/g, " ").trim() || "Clinical Image";
 }
 
 function validateSourceFile(sourcePath: string, sourceFilename: string): void {

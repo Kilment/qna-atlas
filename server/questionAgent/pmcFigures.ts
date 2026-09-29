@@ -312,7 +312,8 @@ export function vetArticleFigures(params: {
       reject(fig.figId, risk);
       continue;
     }
-    const leak = captionLeaksAnswer(fig.caption, avoidTerms);
+    // The article title is shown to learners in the credit line, so it must not reveal the answer either.
+    const leak = captionLeaksAnswer(fig.caption, avoidTerms) ?? (captionLeaksAnswer(hit.title, avoidTerms)?.replace("caption", "article title") ?? null);
     if (leak) {
       reject(fig.figId, leak);
       continue;
