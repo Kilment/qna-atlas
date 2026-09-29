@@ -337,6 +337,7 @@ export function SpacedRepetitionPage({ onBack }: SpacedRepetitionProps) {
                   <QuestionImage
                     src={current.question.imageUrl}
                     alt={current.question.imageAlt ?? 'Clinical image'}
+                    attribution={current.question.imageAttribution}
                     className="mb-4"
                   />
                 )}

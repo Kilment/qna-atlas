@@ -32,6 +32,7 @@ import {
   parseInstitutionalCodeType,
 } from "./institutionalAccess";
 import { getSpecialtyForHost, requestHostname } from "./seoPublic";
+import { registerQuestionAgentRoutes } from "./questionAgent/routes";
 import {
   databaseLabelForSpecialty,
   notifyPlanPurchaseSlack,
@@ -42,7 +43,14 @@ import {
   slackFieldsFromQuestion,
 } from "./notifySupport";
 
-const ADMIN_CODE = process.env.ADMIN_CODE || "1127";
+/**
+ * Shared admin gate. There is intentionally no built-in default: when ADMIN_CODE is unset,
+ * every admin route rejects requests (fail closed).
+ */
+const ADMIN_CODE = process.env.ADMIN_CODE?.trim() ?? "";
+if (!ADMIN_CODE) {
+  console.warn("[admin] ADMIN_CODE is not set; X-Admin-Code protected routes will reject all requests.");
+}
 
 /** Paid personal plans (Stripe / checkout); institutional is excluded. */
 const PAID_SUBSCRIPTION_PLAN_NAMES = new Set([
@@ -319,8 +327,9 @@ async function specialtyIsLocked(userId: string, specialtyId: SpecialtyId): Prom
 const QUESTION_IMPORT_API_KEY = process.env.QUESTION_IMPORT_API_KEY;
 
 function requireAdminCode(req: any): boolean {
+  if (!ADMIN_CODE) return false;
   const code = req.headers["x-admin-code"];
-  return code === ADMIN_CODE;
+  return typeof code === "string" && secretsEqual(code, ADMIN_CODE);
 }
 
 /** Require QUESTION_IMPORT_API_KEY via Authorization: Bearer <key> or X-API-Key header. */
@@ -329,7 +338,10 @@ function requireImportApiKey(req: any): boolean {
   const auth = req.headers.authorization;
   const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
   const headerKey = req.headers["x-api-key"];
-  return bearer === QUESTION_IMPORT_API_KEY || headerKey === QUESTION_IMPORT_API_KEY;
+  return (
+    (typeof bearer === "string" && secretsEqual(bearer, QUESTION_IMPORT_API_KEY)) ||
+    (typeof headerKey === "string" && secretsEqual(headerKey, QUESTION_IMPORT_API_KEY))
+  );
 }
 
 function secretsEqual(provided: string, expected: string): boolean {
@@ -359,6 +371,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   } catch (err) {
     console.error("Subscription schema warmup failed; server continuing:", err);
   }
+
+  // Question-fix agent: schema (image attribution columns, proposals table) and routes.
+  try {
+    await storage.ensureQuestionAgentSchema();
+  } catch (err) {
+    console.error("Question agent schema setup failed; server continuing:", err);
+  }
+  registerQuestionAgentRoutes(app);
 
   // One-time reset all users to no subscription when RUN_SUBSCRIPTION_RESET=true (unset after running)
   try {

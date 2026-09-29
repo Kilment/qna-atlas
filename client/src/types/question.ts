@@ -1,3 +1,10 @@
+export interface ImageAttribution {
+  credit: string | null;
+  license: string | null;
+  sourceUrl: string | null;
+  pmcid: string | null;
+}
+
 export interface Question {
   id: string;
   question: string;
@@ -7,6 +14,7 @@ export interface Question {
   tags: string[];
   imageUrl?: string | null;
   imageAlt?: string | null;
+  imageAttribution?: ImageAttribution | null;
 }
 
 export interface Section {

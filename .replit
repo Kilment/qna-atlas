@@ -54,10 +54,13 @@ externalPort = 3002
 localPort = 5050
 externalPort = 3003
 
+[[ports]]
+localPort = 5051
+externalPort = 4200
+
 [userenv]
 
 [userenv.shared]
 PORT = "5000"
 CANONICAL_PUBLIC_ORIGIN = "https://prs-atlas.com"
 OPENAI_ASSISTANT_ID = "asst_tt8Ci5ShxyJNCMUA2ob7EB8m"
-QUESTION_IMPORT_API_KEY = "wf0JKM0SWLSr-zVDv8j9JrsOplqw2YwndRMiFq3RVg4"

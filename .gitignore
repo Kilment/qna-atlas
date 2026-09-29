@@ -38,3 +38,5 @@ server/data/question-images/*
 # Large Anki decks (extract topics instead of committing)
 *.apkg
 attached_assets/*.apkg
+server/data/agent-images/
+tmp/

@@ -47,6 +47,10 @@ export type ContentQuestion = {
   flagged: boolean;
   imageUrl?: string | null;
   imageAlt?: string | null;
+  imageSourcePmcid?: string | null;
+  imageCredit?: string | null;
+  imageLicense?: string | null;
+  imageSourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -124,6 +128,7 @@ export async function applyContentSchemaGuards(target: Queryable): Promise<void>
     ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_url varchar(512);
     ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_alt varchar(256);
   `);
+  await ensureImageAttributionColumns(target);
   await target.query(`
     CREATE TABLE IF NOT EXISTS content_promotions (
       specialty_id varchar(32) PRIMARY KEY,
@@ -132,6 +137,16 @@ export async function applyContentSchemaGuards(target: Queryable): Promise<void>
       promoted_at timestamp NOT NULL DEFAULT now(),
       inserted_questions integer NOT NULL DEFAULT 0
     );
+  `);
+}
+
+/** Image attribution columns (open-access figures). Idempotent. */
+export async function ensureImageAttributionColumns(target: Queryable): Promise<void> {
+  await target.query(`
+    ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_source_pmcid varchar(32);
+    ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_credit varchar(512);
+    ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_license varchar(64);
+    ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_source_url varchar(512);
   `);
 }
 
@@ -146,7 +161,7 @@ export function computeContentHash(parts: {
   questions: ContentQuestion[];
 }): string {
   const hash = createHash("sha256");
-  hash.update("promotion:insert-only-syncs-flagged-visible-images-v2\n");
+  hash.update("promotion:insert-only-syncs-flagged-visible-images-lww-v3\n");
   for (const s of [...parts.sections].sort((a, b) => a.id.localeCompare(b.id))) {
     hash.update(`S:${s.id}:${s.specialtyId}:${s.title}:${s.sortOrder}\n`);
   }
@@ -154,7 +169,7 @@ export function computeContentHash(parts: {
     hash.update(`U:${s.id}:${s.sectionId}:${s.title}:${s.sortOrder}\n`);
   }
   for (const q of [...parts.questions].sort((a, b) => a.id.localeCompare(b.id))) {
-    hash.update(`Q:${q.id}:${q.subsectionId}:${q.question}:${q.answer}:${q.visible}:${q.flagged}:${q.imageUrl ?? ""}:${q.imageAlt ?? ""}\n`);
+    hash.update(`Q:${q.id}:${q.subsectionId}:${q.question}:${q.answer}:${q.visible}:${q.flagged}:${q.imageUrl ?? ""}:${q.imageAlt ?? ""}:${q.imageSourcePmcid ?? ""}:${q.imageCredit ?? ""}:${q.imageLicense ?? ""}:${q.imageSourceUrl ?? ""}\n`);
   }
   return hash.digest("hex");
 }
@@ -194,8 +209,10 @@ export async function recordPromotion(
 /**
  * Question wording on production is authoritative (audit agent revisions). Promotion modes:
  * - insert-only (deploy default): insert new questions; on conflict sync visibility controls
- *   (flagged, visible) and media (image_url, image_alt) from the content file, but never
- *   overwrite stem/answer/tags/source/subsection.
+ *   (flagged, visible) and media (image_url, image_alt and attribution) from the content file, but
+ *   never overwrite stem/answer/tags/source/subsection. The sync is last-writer-wins: a production
+ *   row edited after the content file's copy (for example by the question-fix agent or an admin) is
+ *   left alone, so a deploy cannot revert live fixes.
  * - upsert: full overwrite from the content file — operator-driven restore only.
  */
 export type ImportMode = "insert-only" | "upsert";
@@ -209,7 +226,7 @@ export type ImportCounts = {
   questionsSkipped: number;
 };
 
-/** Rows per multi-row insert. 13 columns x 100 rows stays far below the 65535 parameter cap. */
+/** Rows per multi-row insert. 17 columns x 100 rows stays far below the 65535 parameter cap. */
 const BATCH_SIZE = 100;
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -276,7 +293,7 @@ export async function importSpecialtyContent(
   for (const batch of chunk(file.questions, BATCH_SIZE)) {
     const values: unknown[] = [];
     const tuples = batch.map((q, row) => {
-      const base = row * 13;
+      const base = row * 17;
       values.push(
         q.id,
         q.subsectionId,
@@ -289,10 +306,14 @@ export async function importSpecialtyContent(
         q.flagged,
         q.imageUrl ?? null,
         q.imageAlt ?? null,
+        q.imageSourcePmcid ?? null,
+        q.imageCredit ?? null,
+        q.imageLicense ?? null,
+        q.imageSourceUrl ?? null,
         q.createdAt,
         q.updatedAt
       );
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::jsonb, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`;
     });
 
     const conflict =
@@ -308,18 +329,28 @@ export async function importSpecialtyContent(
              flagged = EXCLUDED.flagged,
              image_url = EXCLUDED.image_url,
              image_alt = EXCLUDED.image_alt,
+             image_source_pmcid = EXCLUDED.image_source_pmcid,
+             image_credit = EXCLUDED.image_credit,
+             image_license = EXCLUDED.image_license,
+             image_source_url = EXCLUDED.image_source_url,
              updated_at = EXCLUDED.updated_at`
         : `DO UPDATE SET
              visible = EXCLUDED.visible,
              flagged = EXCLUDED.flagged,
              image_url = EXCLUDED.image_url,
              image_alt = EXCLUDED.image_alt,
-             updated_at = EXCLUDED.updated_at`;
+             image_source_pmcid = EXCLUDED.image_source_pmcid,
+             image_credit = EXCLUDED.image_credit,
+             image_license = EXCLUDED.image_license,
+             image_source_url = EXCLUDED.image_source_url,
+             updated_at = EXCLUDED.updated_at
+           WHERE questions.updated_at <= EXCLUDED.updated_at`;
 
     const written = await target.query(
       `INSERT INTO questions (
          id, subsection_id, question, answer, tags, source,
-         visible, reported, flagged, image_url, image_alt, created_at, updated_at
+         visible, reported, flagged, image_url, image_alt,
+         image_source_pmcid, image_credit, image_license, image_source_url, created_at, updated_at
        ) VALUES ${tuples.join(", ")}
        ON CONFLICT (id) ${conflict}
        RETURNING id`,
@@ -331,6 +362,124 @@ export async function importSpecialtyContent(
   }
 
   return counts;
+}
+
+/**
+ * Read a specialty's content from `source` into the export file shape. Used by the export CLI
+ * (workspace DB) and by the question-agent export endpoint (live production DB).
+ */
+export async function buildSpecialtyContentFile(
+  source: Queryable,
+  specialtyId: SpecialtyId,
+  sourceFingerprint: string
+): Promise<{ file: SpecialtyContentFile; orphanQuestionsSkipped: number }> {
+  await ensureImageAttributionColumns(source);
+  const sectionRows = await source.query<{
+    id: string;
+    specialty_id: SpecialtyId;
+    title: string;
+    sort_order: number;
+  }>(`SELECT id, specialty_id, title, sort_order FROM sections WHERE ${sectionSelectSql(specialtyId)} ORDER BY sort_order, id`);
+
+  const sectionIds = sectionRows.rows.map((r) => r.id);
+  if (sectionIds.length === 0) {
+    throw new Error(`No ${specialtyId} sections in the source database — nothing to export.`);
+  }
+
+  const subsectionRows = await source.query<{
+    id: string;
+    section_id: string;
+    title: string;
+    sort_order: number;
+  }>(
+    `SELECT id, section_id, title, sort_order FROM subsections
+     WHERE section_id = ANY($1::varchar[]) ORDER BY sort_order, id`,
+    [sectionIds]
+  );
+  const subsectionIds = subsectionRows.rows.map((r) => r.id);
+
+  const questionRows = await source.query<{
+    id: string;
+    subsection_id: string;
+    question: string;
+    answer: string;
+    tags: string[] | null;
+    source: string;
+    visible: boolean;
+    reported: boolean;
+    flagged: boolean;
+    image_url: string | null;
+    image_alt: string | null;
+    image_source_pmcid: string | null;
+    image_credit: string | null;
+    image_license: string | null;
+    image_source_url: string | null;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `SELECT id, subsection_id, question, answer, tags, source, visible, reported, flagged, image_url, image_alt,
+            image_source_pmcid, image_credit, image_license, image_source_url, created_at, updated_at
+     FROM questions WHERE subsection_id = ANY($1::varchar[]) ORDER BY id`,
+    [subsectionIds]
+  );
+
+  // Questions carrying the specialty's id prefix but parented outside its sections would
+  // be silently dropped, so surface them rather than exporting a quietly short bank.
+  const orphans = await source.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM questions
+     WHERE ${specialtyId === "ortho" ? "id LIKE 'ortho-%'" : "id NOT LIKE 'ortho-%'"}
+       AND NOT (subsection_id = ANY($1::varchar[]))`,
+    [subsectionIds]
+  );
+
+  const sections: ContentSection[] = sectionRows.rows.map((r) => ({
+    id: r.id,
+    specialtyId: r.specialty_id ?? specialtyId,
+    title: r.title,
+    sortOrder: r.sort_order,
+  }));
+  const subsections: ContentSubsection[] = subsectionRows.rows.map((r) => ({
+    id: r.id,
+    sectionId: r.section_id,
+    title: r.title,
+    sortOrder: r.sort_order,
+  }));
+  const questions: ContentQuestion[] = questionRows.rows.map((r) => ({
+    id: r.id,
+    subsectionId: r.subsection_id,
+    question: r.question,
+    answer: r.answer,
+    tags: Array.isArray(r.tags) ? r.tags : [],
+    source: r.source,
+    visible: r.visible,
+    reported: r.reported,
+    flagged: r.flagged,
+    imageUrl: r.image_url,
+    imageAlt: r.image_alt,
+    imageSourcePmcid: r.image_source_pmcid,
+    imageCredit: r.image_credit,
+    imageLicense: r.image_license,
+    imageSourceUrl: r.image_source_url,
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  }));
+
+  const file: SpecialtyContentFile = {
+    formatVersion: CONTENT_FILE_FORMAT,
+    specialtyId,
+    exportedAt: new Date().toISOString(),
+    sourceFingerprint,
+    contentHash: computeContentHash({ sections, subsections, questions }),
+    counts: {
+      sections: sections.length,
+      subsections: subsections.length,
+      questions: questions.length,
+    },
+    sections,
+    subsections,
+    questions,
+  };
+  return { file, orphanQuestionsSkipped: orphans.rows[0]?.n ?? 0 };
 }
 
 /** How much of a specialty's content the target already holds. */

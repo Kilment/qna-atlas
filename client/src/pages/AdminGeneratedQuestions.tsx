@@ -83,12 +83,26 @@ export default function AdminGeneratedQuestions() {
     if (unlocked && adminCode) fetchDrafts();
   }, [unlocked, adminCode, fetchDrafts]);
 
-  const handleCodeSubmit = (e: React.FormEvent) => {
+  const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCodeError(null);
     const code = codeInput.trim();
-    if (code !== "1127") {
+    if (!code) {
       setCodeError("Invalid code");
+      return;
+    }
+    // The admin code is validated by the server only; it is never embedded in the client bundle.
+    try {
+      const res = await fetch("/api/admin/generated-questions", {
+        headers: { "X-Admin-Code": code },
+        credentials: "include",
+      });
+      if (res.status === 401 || res.status === 403) {
+        setCodeError("Invalid code");
+        return;
+      }
+    } catch {
+      setCodeError("Could not verify code. Try again.");
       return;
     }
     setStoredCode(code);

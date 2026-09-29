@@ -11,7 +11,8 @@ export type SlackNotifyKind =
   | "question-report"
   | "support-form"
   | "user-signup"
-  | "plan-purchase";
+  | "plan-purchase"
+  | "question-agent";
 
 export function databaseLabelForSpecialty(specialtyId?: SpecialtyId | null): string {
   if (specialtyId === "ortho") return "Ortho database";
@@ -59,6 +60,9 @@ function webhookUrlFor(kind: SlackNotifyKind): string | undefined {
   const growthFallback = process.env.SLACK_GROWTH_WEBHOOK_URL?.trim() || fallback;
   const specific = {
     "question-report": process.env.SLACK_QUESTION_REPORTS_WEBHOOK_URL?.trim(),
+    "question-agent":
+      process.env.SLACK_QUESTION_AGENT_WEBHOOK_URL?.trim() ||
+      process.env.SLACK_QUESTION_REPORTS_WEBHOOK_URL?.trim(),
     "support-form": process.env.SLACK_SUPPORT_WEBHOOK_URL?.trim(),
     "user-signup": process.env.SLACK_SIGNUPS_WEBHOOK_URL?.trim() || growthFallback,
     "plan-purchase": process.env.SLACK_PURCHASES_WEBHOOK_URL?.trim() || growthFallback,
@@ -103,6 +107,16 @@ export async function postSlackNotification(
     console.error(`[Slack] Webhook ${kind} error:`, error);
     return false;
   }
+}
+
+/** Escape text for Slack mrkdwn (exported for the question-agent proposal messages). */
+export function escapeForSlack(text: string): string {
+  return slackEscape(text);
+}
+
+/** Post a pre-formatted message to the question-agent Slack channel. Never throws. */
+export async function postQuestionAgentSlack(text: string): Promise<boolean> {
+  return postSlackNotification("question-agent", text);
 }
 
 function clipForSlack(text: string, max: number): string {

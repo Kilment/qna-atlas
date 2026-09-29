@@ -53,6 +53,7 @@ import {
   type InsertContactMessage,
   type QuestionRevision,
   type InsertQuestionRevision,
+  type QuestionImageAttribution,
   type AgentJobRun,
   type AgentLesson,
   type InsertAgentLesson,
@@ -153,6 +154,13 @@ export type SectionQuestionDto = {
   tags: string[];
   imageUrl?: string | null;
   imageAlt?: string | null;
+  /** Credit line for open-access images (PMC); null for in-house images. */
+  imageAttribution?: {
+    credit: string | null;
+    license: string | null;
+    sourceUrl: string | null;
+    pmcid: string | null;
+  } | null;
 };
 
 export type SectionDto = {
@@ -1236,6 +1244,15 @@ export class DatabaseStorage implements IStorage {
           tags: q.tags ?? [],
           imageUrl: q.imageUrl ?? null,
           imageAlt: q.imageAlt ?? null,
+          imageAttribution:
+            q.imageUrl && (q.imageCredit || q.imageLicense || q.imageSourceUrl || q.imageSourcePmcid)
+              ? {
+                  credit: q.imageCredit ?? null,
+                  license: q.imageLicense ?? null,
+                  sourceUrl: q.imageSourceUrl ?? null,
+                  pmcid: q.imageSourcePmcid ?? null,
+                }
+              : null,
         })),
       }));
       return { id: sec.id, title: sec.title, subsections: subs };
@@ -1803,18 +1820,75 @@ export class DatabaseStorage implements IStorage {
     return !!updated;
   }
 
+  /**
+   * Set or clear a question image. Attribution columns follow the image: pass `attribution` to set
+   * credit/license (e.g. a PMC figure), pass `null` to clear it, or omit it to keep the current
+   * attribution when the URL is unchanged (and clear it when the URL changes).
+   */
   async updateQuestionImage(
     id: string,
     imageUrl: string | null,
     imageAlt: string | null,
+    attribution?: QuestionImageAttribution | null,
   ): Promise<boolean> {
     await this.ensureQuestionsImageColumns();
+    const [existing] = await db
+      .select({ imageUrl: questions.imageUrl })
+      .from(questions)
+      .where(eq(questions.id, id));
+    if (!existing) return false;
+    const urlChanged = (existing.imageUrl ?? null) !== (imageUrl ?? null);
+    const set: Partial<typeof questions.$inferInsert> = { imageUrl, imageAlt, updatedAt: new Date() };
+    if (attribution !== undefined || urlChanged) {
+      set.imageSourcePmcid = attribution?.pmcid ?? null;
+      set.imageCredit = attribution?.credit ?? null;
+      set.imageLicense = attribution?.license ?? null;
+      set.imageSourceUrl = attribution?.sourceUrl ?? null;
+    }
     const [updated] = await db
       .update(questions)
-      .set({ imageUrl, imageAlt, updatedAt: new Date() })
+      .set(set)
       .where(eq(questions.id, id))
       .returning({ id: questions.id });
     return !!updated;
+  }
+
+  /** Idempotent schema needed by the question-fix agent (image attribution columns, proposals table). */
+  async ensureQuestionAgentSchema(): Promise<void> {
+    await this.ensureQuestionsImageColumns();
+    await this.ensureFeedbackAgentTables();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "question_agent_proposals" (
+        "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        "question_id" varchar(128) NOT NULL,
+        "status" varchar(16) DEFAULT 'pending' NOT NULL,
+        "base_hash" varchar(64) NOT NULL,
+        "previous_question" text NOT NULL,
+        "previous_answer" text NOT NULL,
+        "new_question" text,
+        "new_answer" text,
+        "image_url" varchar(512),
+        "image_alt" varchar(256),
+        "image_attribution" jsonb,
+        "unhide" boolean DEFAULT false NOT NULL,
+        "rationale" text,
+        "reasons" jsonb DEFAULT '[]'::jsonb NOT NULL,
+        "run_id" varchar,
+        "decided_by" varchar(64),
+        "decision_note" text,
+        "created_at" timestamp DEFAULT now() NOT NULL,
+        "decided_at" timestamp
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS "idx_question_agent_proposals_question_id" ON "question_agent_proposals" ("question_id")`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS "idx_question_agent_proposals_status" ON "question_agent_proposals" ("status")`
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS "idx_question_agent_proposals_run_id" ON "question_agent_proposals" ("run_id")`
+    );
   }
 
   async getQuestion(id: string) {
@@ -2169,6 +2243,10 @@ export class DatabaseStorage implements IStorage {
     questionsImageColumnsDone = true;
     await pool.query(`ALTER TABLE "questions" ADD COLUMN IF NOT EXISTS "image_url" varchar(512)`);
     await pool.query(`ALTER TABLE "questions" ADD COLUMN IF NOT EXISTS "image_alt" varchar(256)`);
+    await pool.query(`ALTER TABLE "questions" ADD COLUMN IF NOT EXISTS "image_source_pmcid" varchar(32)`);
+    await pool.query(`ALTER TABLE "questions" ADD COLUMN IF NOT EXISTS "image_credit" varchar(512)`);
+    await pool.query(`ALTER TABLE "questions" ADD COLUMN IF NOT EXISTS "image_license" varchar(64)`);
+    await pool.query(`ALTER TABLE "questions" ADD COLUMN IF NOT EXISTS "image_source_url" varchar(512)`);
   }
 
   private async ensureTestSessionsSpecialtyColumn(): Promise<void> {

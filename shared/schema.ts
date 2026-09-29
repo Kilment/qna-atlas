@@ -282,6 +282,11 @@ export const questions = pgTable("questions", {
   /** Public URL path to a clinical image shown after the question stem (e.g. /question-images/foo.webp). */
   imageUrl: varchar("image_url", { length: 512 }),
   imageAlt: varchar("image_alt", { length: 256 }),
+  /** Attribution for open-access images (e.g. PubMed Central figures). Null for in-house images. */
+  imageSourcePmcid: varchar("image_source_pmcid", { length: 32 }),
+  imageCredit: varchar("image_credit", { length: 512 }),
+  imageLicense: varchar("image_license", { length: 64 }),
+  imageSourceUrl: varchar("image_source_url", { length: 512 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -531,6 +536,52 @@ export const questionRevisions = pgTable(
 
 export type QuestionRevision = typeof questionRevisions.$inferSelect;
 export type InsertQuestionRevision = typeof questionRevisions.$inferInsert;
+
+/** Attribution stored with an agent-sourced image. */
+export type QuestionImageAttribution = {
+  pmcid?: string | null;
+  credit?: string | null;
+  license?: string | null;
+  sourceUrl?: string | null;
+};
+
+/**
+ * Fixes and images filed by the question-fix cloud agent that need human approval before they
+ * touch the live question. Created at runtime (server/questionAgent/store.ts); declared here so
+ * `drizzle-kit push` does not treat it as unknown.
+ */
+export const questionAgentProposals = pgTable(
+  "question_agent_proposals",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    questionId: varchar("question_id", { length: 128 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("pending"), // pending | approved | rejected | stale | superseded
+    baseHash: varchar("base_hash", { length: 64 }).notNull(),
+    previousQuestion: text("previous_question").notNull(),
+    previousAnswer: text("previous_answer").notNull(),
+    newQuestion: text("new_question"),
+    newAnswer: text("new_answer"),
+    imageUrl: varchar("image_url", { length: 512 }),
+    imageAlt: varchar("image_alt", { length: 256 }),
+    imageAttribution: jsonb("image_attribution").$type<QuestionImageAttribution | null>(),
+    unhide: boolean("unhide").notNull().default(false),
+    rationale: text("rationale"),
+    reasons: jsonb("reasons").$type<string[]>().default([]).notNull(),
+    runId: varchar("run_id"),
+    decidedBy: varchar("decided_by", { length: 64 }),
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    decidedAt: timestamp("decided_at"),
+  },
+  (table) => [
+    index("idx_question_agent_proposals_question_id").on(table.questionId),
+    index("idx_question_agent_proposals_status").on(table.status),
+    index("idx_question_agent_proposals_run_id").on(table.runId),
+  ]
+);
+
+export type QuestionAgentProposal = typeof questionAgentProposals.$inferSelect;
+export type InsertQuestionAgentProposal = typeof questionAgentProposals.$inferInsert;
 
 export const agentJobRuns = pgTable(
   "agent_job_runs",
