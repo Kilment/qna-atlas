@@ -63,6 +63,7 @@ externalPort = 4200
 [userenv.shared]
 PORT = "5000"
 CANONICAL_PUBLIC_ORIGIN = "https://prs-atlas.com"
+IMAGE_BUCKET_ID = "replit-objstore-19403069-c6ff-4ba6-b9bd-14a77a5af366"
 OPENAI_ASSISTANT_ID = "asst_tt8Ci5ShxyJNCMUA2ob7EB8m"
 
 [objectStorage]

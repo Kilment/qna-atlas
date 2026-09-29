@@ -180,10 +180,15 @@ function eutilsUrl(endpoint: string, params: Record<string, string | number>): s
 }
 
 async function eutilsJson(fetchFn: FetchLike, url: string, what: string): Promise<any> {
+  // NCBI rate-limits per IP (3 requests/second without an API key) and its gateway answers 429 or 5xx
+  // when a shared IP is busy. Retry with backoff before giving up.
+  const delays = process.env.NCBI_RETRY_DELAYS_MS
+    ? process.env.NCBI_RETRY_DELAYS_MS.split(",").map(Number)
+    : [1500, 4000, 10000, 20000];
   let res = await fetchFn(url);
-  if (res.status === 429) {
-    // NCBI allows 3 requests/second without an API key; back off once.
-    await new Promise((r) => setTimeout(r, 1200));
+  for (const delay of delays) {
+    if (res.ok || (res.status !== 429 && res.status < 500)) break;
+    await new Promise((r) => setTimeout(r, delay));
     res = await fetchFn(url);
   }
   if (!res.ok) throw new Error(`NCBI PMC ${what} failed: HTTP ${res.status}`);
