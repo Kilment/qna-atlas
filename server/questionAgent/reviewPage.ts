@@ -73,16 +73,16 @@ export function renderReviewPage(params: {
       : `<form method="post" action="${escapeHtml(params.postPath)}">
            <input type="hidden" name="exp" value="${params.exp}">
            <input type="hidden" name="sig" value="${escapeHtml(params.sig)}">
-           <button class="approve" name="action" value="approve" type="submit">Approve and apply</button>
+           <button class="approve" name="action" value="approve" type="submit">Approve</button>
            <button class="reject" name="action" value="reject" type="submit">Reject</button>
          </form>`;
   return shell(
-    `Question agent proposal ${p.questionId}`,
-    `<h1>Question agent proposal <code>${escapeHtml(p.questionId)}</code></h1>
-     <div class="reasons"><strong>Needs approval because:</strong><ul>${p.reasons
+    `Question Agent Proposal ${p.questionId}`,
+    `<h1>Question Agent Proposal <code>${escapeHtml(p.questionId)}</code></h1>
+     <div class="reasons"><strong>Needs Approval Because:</strong><ul>${p.reasons
        .map((r) => `<li>${escapeHtml(r)}</li>`)
        .join("")}${p.unhide ? "<li>Will unhide the question after applying.</li>" : ""}</ul></div>
-     ${p.rationale ? `<p><strong>Agent rationale:</strong> ${escapeHtml(p.rationale)}</p>` : ""}
+     ${p.rationale ? `<p><strong>Agent Rationale:</strong> ${escapeHtml(p.rationale)}</p>` : ""}
      <div class="cols">
        <div class="card"><h2>${changed ? "Before" : "Current"}</h2>${questionHtml(p.previousQuestion, p.previousAnswer)}</div>
        ${changed ? `<div class="card"><h2>After</h2>${questionHtml(p.newQuestion!, p.newAnswer!)}</div>` : ""}

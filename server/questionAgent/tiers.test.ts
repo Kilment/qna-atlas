@@ -116,6 +116,11 @@ describe("helpers", () => {
     assert.equal(isCosmeticEdit("Free flap loss", "Free-flap loss."), true);
     assert.equal(isCosmeticEdit("within 1 cm", "within 2 cm"), false);
     assert.equal(isCosmeticEdit("no history of clots", "history of clots"), false);
+    // Changing the patient's demographics is never cosmetic.
+    assert.equal(
+      isCosmeticEdit("A 32-year-old woman presents to the clinic. She desires surgery.", "A 32-year-old man presents to the clinic. He desires surgery."),
+      false
+    );
   });
   it("stripMediaPhrases removes shown phrases", () => {
     assert.equal(stripMediaPhrases("A clinical photograph is shown. What is next?"), "What is next?");

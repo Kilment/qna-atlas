@@ -48,6 +48,9 @@ const MEANING_TOKENS = new Set([
   "superficial", "deep", "acute", "chronic", "early", "late", "before", "after",
   "only", "all", "any", "always", "first", "second", "third", "best", "worst",
   "positive", "negative", "benign", "malignant", "unilateral", "bilateral",
+  // Patient demographics: changing who the patient is changes the clinical picture.
+  "man", "men", "woman", "women", "male", "female", "boy", "girl", "he", "she", "his", "her", "him",
+  "transgender", "pregnant", "infant", "neonate", "newborn", "child", "adolescent", "adult", "elderly",
 ]);
 
 const MEDIA_PHRASE_RES: RegExp[] = [
