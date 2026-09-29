@@ -50,13 +50,25 @@ export function renderReviewPage(params: {
   sig: string;
   postPath: string;
   stale: boolean;
+  /** Image currently attached to the live question (shown so reviewers see what is replaced/removed). */
+  currentImage?: { url: string; alt: string | null } | null;
+  /** For image moves: the question the image comes from. */
+  moveSource?: { id: string; question: string; answer: string } | null;
 }): string {
   const { proposal: p } = params;
   const decided = p.status !== "pending";
   const changed = p.newQuestion != null && p.newAnswer != null;
   const a = p.imageAttribution;
-  const image = p.imageUrl
-    ? `<div class="card"><h2>Proposed image</h2><img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.imageAlt ?? "")}">
+  const cur = params.currentImage;
+  const currentCard = cur?.url
+    ? `<div class="card"><h2>${
+        p.removeImage ? "Current image (will be removed)" : p.imageUrl ? "Current image (will be replaced)" : "Current image"
+      }</h2><img src="${escapeHtml(cur.url)}" alt="${escapeHtml(cur.alt ?? "")}"><p><small>${escapeHtml(cur.url)}</small></p></div>`
+    : p.removeImage || p.imageUrl
+      ? `<div class="card"><h2>Current image</h2><p>This question has no image right now.</p></div>`
+      : "";
+  const proposedCard = p.imageUrl
+    ? `<div class="card"><h2>Proposed image${p.moveImageFrom ? " (moved from another question)" : ""}</h2><img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(p.imageAlt ?? "")}">
        <p>${escapeHtml(p.imageAlt ?? "")}</p>
        ${
          a
@@ -65,6 +77,13 @@ export function renderReviewPage(params: {
              }${a.sourceUrl ? ` | <a href="${escapeHtml(a.sourceUrl)}" rel="noopener noreferrer">source</a>` : ""}</small></p>`
            : ""
        }</div>`
+    : "";
+  const image = currentCard || proposedCard ? `<div class="cols">${currentCard}${proposedCard}</div>` : "";
+  const sourceCard = params.moveSource
+    ? `<div class="card"><h2>Image comes from question <code>${escapeHtml(params.moveSource.id)}</code></h2>${questionHtml(
+        params.moveSource.question,
+        params.moveSource.answer
+      )}<p><small>After approval the image is removed from this question, and it is hidden if its stem still promises a photo.</small></p></div>`
     : "";
   const actions = decided
     ? `<p><strong>This proposal is already ${escapeHtml(p.status)}.</strong></p>`
@@ -94,6 +113,7 @@ export function renderReviewPage(params: {
        ${changed ? `<div class="card"><h2>After</h2>${questionHtml(p.newQuestion!, p.newAnswer!)}</div>` : ""}
      </div>
      ${image}
+     ${sourceCard}
      <h2>Decision</h2>${actions}`
   );
 }

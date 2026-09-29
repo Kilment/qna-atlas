@@ -592,6 +592,16 @@ export async function rejectProposal(id: string, decidedBy: string, note?: strin
   return { ok: true, status: "rejected" };
 }
 
+/** Mark pending proposals as superseded (e.g. a move replaces a plain image-removal proposal). */
+export async function supersedeProposals(ids: string[], note: string): Promise<void> {
+  if (ids.length === 0) return;
+  await pool.query(
+    `UPDATE question_agent_proposals SET status = 'superseded', decided_at = now(), decided_by = 'system', decision_note = $2
+       WHERE id = ANY($1::varchar[]) AND status = 'pending'`,
+    [ids, note]
+  );
+}
+
 async function markProposal(id: string, status: string, decidedBy: string, note: string | null): Promise<void> {
   await pool.query(
     `UPDATE question_agent_proposals SET status = $2, decided_by = $3, decision_note = $4, decided_at = now() WHERE id = $1`,

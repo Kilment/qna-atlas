@@ -73,6 +73,14 @@ describe("question agent API", { skip: !hasDb }, () => {
   };
   const fix = (body: Record<string, unknown>, query = "") =>
     call("POST", `/api/internal/question-agent/fix${query}`, { questionId: QID, runId: RUN, ...body });
+  const reviewHtml = async (proposalId: string) => {
+    const { signReviewLink } = await import("./auth");
+    const exp = Date.now() + 60_000;
+    const sig = signReviewLink(proposalId, exp)!;
+    const page = await fetch(`${base}/api/question-agent/review/${proposalId}?exp=${exp}&sig=${sig}`);
+    assert.equal(page.status, 200);
+    return page.text();
+  };
   const current = async () => (await pool.query(`SELECT * FROM questions WHERE id = $1`, [QID])).rows[0];
   const getItem = async () => (await call("GET", `/api/internal/question-agent/question/${encodeURIComponent(QID)}`)).json;
 
@@ -355,6 +363,9 @@ describe("question agent API", { skip: !hasDb }, () => {
     const r = await fix({ baseHash: hash, rationale: "The image shows a different condition than the stem.", removeImage: true, hide: true });
     assert.equal(r.status, 202, JSON.stringify(r.json));
     assert.ok(r.json.reasons.some((x: string) => x.includes(q.image_url)), "reviewer sees which image is removed");
+    const removalPage = await reviewHtml(r.json.proposalId);
+    assert.ok(removalPage.includes(`<img src="${q.image_url}"`), "review page shows the image that would be removed");
+    assert.match(removalPage, /will be removed/);
     let row = await current();
     assert.equal(row.image_url, q.image_url, "image must stay until approval");
     assert.equal(row.visible, true);
@@ -410,6 +421,10 @@ describe("question agent API", { skip: !hasDb }, () => {
     const r = await fix(moveBody);
     assert.equal(r.status, 202, JSON.stringify(r.json));
     assert.ok(r.json.reasons.some((x: string) => x.includes(SRC)), "reviewer sees where the image comes from");
+    const movePage = await reviewHtml(r.json.proposalId);
+    assert.ok(movePage.includes('<img src="/question-images/zz-move-test.jpg"'), "review page shows the proposed image");
+    assert.ok(movePage.includes(SRC), "review page shows the source question");
+    assert.match(movePage, /Proposed image/);
     let target = await current();
     let source = (await pool.query(`SELECT * FROM questions WHERE id = $1`, [SRC])).rows[0];
     assert.equal(target.image_url, null, "nothing moves before approval");
@@ -433,22 +448,35 @@ describe("question agent API", { skip: !hasDb }, () => {
     assert.equal(again.status, 400, "source has nothing left to move");
   });
 
-  it("refuses a move while the source has a pending proposal, and goes stale if its image changes", async () => {
+  it("a move supersedes a pending image-removal on the source, but not other proposals; goes stale if the source image changes", async () => {
     await pool.query(`UPDATE questions SET image_url = '/question-images/zz-move-test.jpg', image_alt = 'x', flagged = false, visible = true WHERE id = $1`, [SRC]);
     await pool.query(`UPDATE questions SET image_url = NULL, image_alt = NULL WHERE id = $1`, [QID]);
     const srcItem = (await call("GET", `/api/internal/question-agent/question/${encodeURIComponent(SRC)}`)).json.item;
-    const held = await call("POST", "/api/internal/question-agent/fix", {
-      questionId: SRC, runId: RUN, baseHash: srcItem.baseHash, rationale: "wrong image", removeImage: true, hide: true,
-    });
-    assert.equal(held.status, 202, JSON.stringify(held.json));
+    const srcFix = (body: Record<string, unknown>) =>
+      call("POST", "/api/internal/question-agent/fix", { questionId: SRC, runId: RUN, baseHash: srcItem.baseHash, ...body });
+
+    // A non-removal proposal on the source blocks the move.
+    const textChange = await srcFix({ rationale: "wording", question: srcItem.question + " Choose one.", answer: srcItem.answer });
+    assert.equal(textChange.status, 202, JSON.stringify(textChange.json));
     const blocked = await fix({ baseHash: (await getItem()).item.baseHash, rationale: "move", moveImageFromQuestionId: SRC });
     assert.equal(blocked.status, 409);
-
-    // Clear the blocker, file the move, then change the source image before approval.
     const { rejectProposal, approveProposal } = await import("./store");
-    await rejectProposal(held.json.proposalId, "test");
+    await rejectProposal(textChange.json.proposalId, "test");
+
+    // A plain removal proposal on the source is superseded by the move.
+    const held = await srcFix({ rationale: "wrong image", removeImage: true, hide: true });
+    assert.equal(held.status, 202, JSON.stringify(held.json));
+    const dry = await fix({ baseHash: (await getItem()).item.baseHash, rationale: "move", moveImageFromQuestionId: SRC }, "?dryRun=true");
+    assert.equal(dry.status, 200);
+    const stillPending = await pool.query(`SELECT status FROM question_agent_proposals WHERE id = $1`, [held.json.proposalId]);
+    assert.equal(stillPending.rows[0].status, "pending", "a dry run must not supersede anything");
+
     const move = await fix({ baseHash: (await getItem()).item.baseHash, rationale: "move", moveImageFromQuestionId: SRC });
     assert.equal(move.status, 202, JSON.stringify(move.json));
+    const superseded = await pool.query(`SELECT status FROM question_agent_proposals WHERE id = $1`, [held.json.proposalId]);
+    assert.equal(superseded.rows[0].status, "superseded");
+
+    // Change the source image before approval: the move goes stale and attaches nothing.
     await pool.query(`UPDATE questions SET image_url = '/question-images/zz-other.jpg' WHERE id = $1`, [SRC]);
     const res = await approveProposal(move.json.proposalId, "test");
     assert.equal(res.ok, false);

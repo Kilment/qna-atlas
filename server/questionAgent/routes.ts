@@ -54,6 +54,7 @@ import {
   getQueueItem,
   hashQuestion,
   listProposals,
+  supersedeProposals,
   listQueue,
   listRevisions,
   rejectProposal,
@@ -144,6 +145,10 @@ function parseAttribution(raw: unknown): { ok: true; value: AttributionInput } |
   const pmcid = str(r.pmcid)?.trim() || null;
   if (pmcid && !/^PMC\d{4,10}$/i.test(pmcid)) return { ok: false, error: "imageAttribution.pmcid must look like PMC1234567." };
   return { ok: true, value: { pmcid: pmcid ? pmcid.toUpperCase() : null, credit, license: verdict.canonical, sourceUrl } };
+}
+
+function isRemovalOnly(p: { removeImage?: boolean; newQuestion: string | null; imageUrl: string | null; moveImageFrom?: string | null; unhide: boolean }): boolean {
+  return !!p.removeImage && p.newQuestion == null && !p.imageUrl && !p.moveImageFrom && !p.unhide;
 }
 
 export function registerQuestionAgentRoutes(app: Express): void {
@@ -298,6 +303,7 @@ export function registerQuestionAgentRoutes(app: Express): void {
 
       // Reassign: take the image already on another question and attach it to this one.
       const moveFromId = str(body.moveImageFromQuestionId)?.trim() || null;
+      let supersedeOnFile: string[] = [];
       if (moveFromId) {
         if (imageUrl) {
           return res.status(400).json({ message: "moveImageFromQuestionId cannot be combined with imageUrl." });
@@ -313,13 +319,17 @@ export function registerQuestionAgentRoutes(app: Express): void {
         if (!source.imageUrl) {
           return res.status(400).json({ message: `Source question ${moveFromId} has no image to move.` });
         }
-        const pending = await listProposals({ questionId: moveFromId, status: "pending", limit: 1 });
-        if (pending.length > 0) {
+        // A pending "remove this image" proposal on the source is what this move accomplishes, so it
+        // is superseded when the move is filed. Any other pending proposal on the source conflicts.
+        const pending = await listProposals({ questionId: moveFromId, status: "pending", limit: 20 });
+        const conflicting = pending.filter((p) => !isRemovalOnly(p));
+        if (conflicting.length > 0) {
           return res.status(409).json({
             status: "conflict",
-            message: `Source question ${moveFromId} has a pending proposal (${pending[0].id}). Resolve it first so the two do not fight over the image.`,
+            message: `Source question ${moveFromId} has a pending proposal (${conflicting[0].id}) that is not just an image removal. Resolve it first so the two do not fight over the image.`,
           });
         }
+        supersedeOnFile = pending.map((p) => p.id);
         imageUrl = source.imageUrl;
         imageAlt = source.imageAlt?.trim() || "Clinical image";
         attribution =
@@ -470,6 +480,9 @@ export function registerQuestionAgentRoutes(app: Express): void {
         ],
         runId,
       });
+      if (supersedeOnFile.length > 0) {
+        await supersedeProposals(supersedeOnFile, `Superseded by move proposal ${proposal.id}`);
+      }
       const specialty = (await getQueueItem(questionId))?.specialtyId;
       const slackNotified = await notifyProposalSlack(proposal, specialty);
       return res.status(202).json({
@@ -590,6 +603,7 @@ export function registerQuestionAgentRoutes(app: Express): void {
     if (!proposal) return res.status(404).send(renderMessagePage("Not found", "This proposal does not exist."));
     const current = await storage.getQuestion(proposal.questionId);
     const stale = !!current && hashQuestion(current.question, current.answer) !== proposal.baseHash;
+    const source = proposal.moveImageFrom ? await storage.getQuestion(proposal.moveImageFrom) : null;
     res.send(
       renderReviewPage({
         proposal,
@@ -597,6 +611,8 @@ export function registerQuestionAgentRoutes(app: Express): void {
         sig,
         postPath: `/api/question-agent/review/${encodeURIComponent(proposal.id)}`,
         stale,
+        currentImage: current?.imageUrl ? { url: current.imageUrl, alt: current.imageAlt ?? null } : null,
+        moveSource: source ? { id: source.id, question: source.question, answer: source.answer } : null,
       })
     );
   });
