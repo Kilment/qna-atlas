@@ -24,6 +24,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { questions } from "@shared/schema";
 import { validateQuestionFormat } from "@shared/questionFormat";
+import { claudeRejectsSamplingParams, resolveClaudeModel } from "../claudeModels";
 
 const OUT_DIR = path.join(process.cwd(), "server", "data");
 const FLAG_PATH = path.join(OUT_DIR, "orthoRescreenFlags.json");
@@ -43,6 +44,10 @@ const DEFAULT_OPENAI_MODEL = "gpt-4o";
 const MODEL =
   process.env.ORTHO_RESCREEN_MODEL ||
   (process.env.CLAUDE_API_KEY ? DEFAULT_CLAUDE_MODEL : DEFAULT_OPENAI_MODEL);
+
+function resolvedModel(provider: LLMClient["provider"]): string {
+  return provider === "claude" ? resolveClaudeModel(MODEL, DEFAULT_CLAUDE_MODEL) : MODEL;
+}
 
 type LLMClient =
   | { provider: "claude"; client: Anthropic }
@@ -216,10 +221,11 @@ async function reviewBatch(
 
   let content: string | null = null;
   if (llm.provider === "claude") {
+    const model = resolvedModel(llm.provider);
     const response = await llm.client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 8000,
-      temperature: 0.15,
+      ...(claudeRejectsSamplingParams(model) ? {} : { temperature: 0.15 }),
       system: buildSystemPrompt(),
       messages: [{ role: "user", content: userContent }],
     });
@@ -227,7 +233,7 @@ async function reviewBatch(
     content = block?.text ?? null;
   } else {
     const response = await llm.client.chat.completions.create({
-      model: MODEL,
+      model: resolvedModel(llm.provider),
       messages: [
         { role: "system", content: buildSystemPrompt() },
         { role: "user", content: userContent },
@@ -262,7 +268,7 @@ async function reviewBatch(
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const llm = getLLM();
-  console.log(`Using ${llm.provider} model=${MODEL}`);
+  console.log(`Using ${llm.provider} model=${resolvedModel(llm.provider)}`);
 
   let rows = await db
     .select({
@@ -309,7 +315,7 @@ async function main() {
       batch: BATCH,
       concurrency: CONCURRENCY,
       provider: llm.provider,
-      model: MODEL,
+      model: resolvedModel(llm.provider),
     })
   );
 
@@ -503,7 +509,7 @@ async function main() {
   const summary = {
     reviewedAt: new Date().toISOString(),
     provider: llm.provider,
-    model: MODEL,
+    model: resolvedModel(llm.provider),
     totalLive: rows.length,
     skippedAlreadyRescreened: priorDone.length,
     remainingReviewed: todo.length,

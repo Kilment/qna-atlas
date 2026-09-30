@@ -29,7 +29,7 @@
     "too-easy-agent": "tsx server/jobs/tooEasyQuestionsJob.ts",
     "export:finetune": "tsx server/scripts/exportFinetuneJsonl.ts",
     "seed:agent-memory": "tsx server/scripts/seedAgentMemory.ts",
-    "test:feedback-agent": "tsx --test server/jobs/feedbackLearningLogic.test.ts server/jobs/agentMemory.test.ts server/jobs/tooEasyQuestionsLogic.test.ts server/notifyGrowthLogic.test.ts",
+    "test:feedback-agent": "tsx --test server/claudeModels.test.ts server/jobs/feedbackLearningLogic.test.ts server/jobs/agentMemory.test.ts server/jobs/tooEasyQuestionsLogic.test.ts server/notifyGrowthLogic.test.ts",
     "verify:email": "tsx server/scripts/verifyEmailSetup.ts",
     "verify:questions": "tsx server/scripts/verifyQuestionFormat.ts",
     "cleanup:questions": "tsx server/scripts/cleanupQuestions.ts",

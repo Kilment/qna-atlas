@@ -12,6 +12,7 @@
  * Requires: CLAUDE_API_KEY (preferred) or OPENAI_API_KEY or OPENAI_QUESTION_GENERATION_API_KEY
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { CLAUDE_SONNET, claudeRejectsSamplingParams, resolveClaudeModel } from "../claudeModels";
 import OpenAI from "openai";
 import { db } from "../db";
 import { questions } from "@shared/schema";
@@ -91,13 +92,13 @@ async function rephraseBatchWithClaude(
   client: Anthropic,
   batch: { id: string; question: string; answer: string }[]
 ): Promise<{ question: string; answer: string }[]> {
-  const model = process.env.CLAUDE_REPHRASE_MODEL || "claude-sonnet-4-20250514";
+  const model = resolveClaudeModel(process.env.CLAUDE_REPHRASE_MODEL, CLAUDE_SONNET);
   const response = await client.messages.create({
     model,
     max_tokens: 16384,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: buildRephrasePrompt(batch) }],
-    temperature: 0.4,
+    ...(claudeRejectsSamplingParams(model) ? {} : { temperature: 0.4 }),
   });
   const block = response.content.find((b): b is { type: "text"; text: string } => b.type === "text");
   if (!block) return [];

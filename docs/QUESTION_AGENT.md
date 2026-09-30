@@ -91,8 +91,9 @@ by the app at `/question-images/agent/<uuid>.<ext>` (nosniff, immutable caching)
 - Downloaded candidates are downscaled to at most 1600 px and re-encoded to JPEG; they are never cropped.
 - Attribution (credit, license, PMCID, source link) is stored on the question and shown under the
   image in the app.
-- Authoritative image acceptance is a **two-model** Anthropic vision check (Opus 4.5
-  `claude-opus-4-5` and Sonnet 4.5 `claude-sonnet-4-5`, image ≤1568 px JPEG). The Read tool’s text
+- Authoritative image acceptance is a **two-model** Anthropic vision check (Opus 4.8
+  `claude-opus-4-8` and Sonnet 5.5 `claude-sonnet-5-5`, image ≤1568 px JPEG). Do not call retired
+  `claude-opus-4-1` / `claude-opus-4-1-20250805`. The Read tool’s text
   description of images is not reliable. Optional `agent:pmc-image --score` is only a single-model
   pre-screen (`QUESTION_AGENT_VISION_MODEL`, default `claude-opus-5` in the script).
 - If no acceptable licensed image is found after a reasonable search, **reword** the question so it

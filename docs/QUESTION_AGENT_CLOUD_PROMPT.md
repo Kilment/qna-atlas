@@ -41,8 +41,8 @@ This run:
 3. For each item: question <id>; read reports; proposals --question-id=<id> --status=pending.
    Skip pending proposals unless you deliberately supersede them with a better fix.
 4. Decision: (a) text → fix stem/choices/explanation (auto for safe typos/explanation; proposal
-   for key/clinical-fact changes); (b) image → REAL two-model vision (claude-opus-4-5 and
-   claude-sonnet-4-5 via Anthropic SDK; JPEG ≤1568px; Read tool image text is NOT reliable; both
+   for key/clinical-fact changes); (b) image → REAL two-model vision (claude-opus-4-8 and
+   claude-sonnet-5-5 via Anthropic SDK; never claude-opus-4-1; no temperature/top_p/top_k; JPEG ≤1568px; Read tool image text is NOT reliable; both
    must agree; on disagreement re-judge with each other's reasoning; leave true splits for humans);
    (c) wrong image → try moveImageFromQuestionId if it belongs elsewhere, else PMC replace;
    (d) no good image → reword, not hide.

@@ -16,6 +16,7 @@ import * as fs from "fs";
 import * as path from "path";
 import sharp from "sharp";
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveClaudeModel } from "../../claudeModels";
 import { agentRequest, configFromEnv } from "./questionAgentClient";
 import {
   fetchArticleMeta,
@@ -167,7 +168,7 @@ async function main() {
   const question = await loadQuestion();
 
   let client: Anthropic | null = null;
-  const model = process.env.QUESTION_AGENT_VISION_MODEL?.trim() || "claude-opus-5";
+  const model = resolveClaudeModel(process.env.QUESTION_AGENT_VISION_MODEL, "claude-opus-5");
   if (has("score")) {
     const apiKey = (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "").trim();
     if (!apiKey) throw new Error("--score needs ANTHROPIC_API_KEY (or CLAUDE_API_KEY).");

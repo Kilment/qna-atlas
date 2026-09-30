@@ -24,6 +24,7 @@ import {
   type AgentDecision,
   type RankedCandidate,
 } from "./feedbackLearningLogic";
+import { resolveClaudeModel } from "../claudeModels";
 
 export const FEEDBACK_AGENT_JOB_NAME = "feedback_learning";
 const DEFAULT_MODEL = "claude-opus-5";
@@ -57,7 +58,7 @@ export type FeedbackAgentResult = {
 };
 
 function modelId(): string {
-  return process.env.FEEDBACK_AGENT_MODEL?.trim() || DEFAULT_MODEL;
+  return resolveClaudeModel(process.env.FEEDBACK_AGENT_MODEL, DEFAULT_MODEL);
 }
 
 function maxUpdates(): number {
