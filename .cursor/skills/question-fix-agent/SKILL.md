@@ -84,7 +84,7 @@ The Read tool’s text description of images is **not reliable**. For any curren
 1. Download image bytes (from `<BASE_URL><imageUrl>` or the PMC candidate `localPath`).
 2. Downscale to **≤1568 px** on the long edge and JPEG-encode (do not crop).
 3. Call the Anthropic SDK **twice**, independently, with the image bytes plus the full stem and key. Use these exact ids. `claude-opus-4-1` and `claude-opus-4-1-20250805` are retired and return `not_found_error`. Do not set `temperature`, `top_p`, or `top_k` (Opus 4.7 and later reject them):
-   - Claude Opus 4.8: model id `claude-opus-4-8`
+   - Claude Opus 5.5: model id `claude-opus-5-5`
    - Claude Sonnet 5.5: model id `claude-sonnet-5-5`
 4. Both must agree that the image matches body part, laterality, modality, age/sex context, and
    that visible text/labels do not leak the diagnosis.

@@ -3,13 +3,13 @@
  *
  * `claude-opus-4-1` is the dateless alias of `claude-opus-4-1-20250805`. Anthropic retired
  * that snapshot on August 5, 2026; requests fail with not_found_error and do not show on
- * the Usage page. The documented replacement is `claude-opus-4-8`.
+ * the Usage page. Calls use the newest Opus model, `claude-opus-5-5`.
  *
  * https://platform.claude.com/docs/en/about-claude/model-deprecations
  */
 
-/** Official replacement for retired Claude Opus 4 and Opus 4.1. */
-export const CLAUDE_OPUS = "claude-opus-4-8";
+/** Newest Claude Opus model on the API. */
+export const CLAUDE_OPUS = "claude-opus-5-5";
 
 /** Official replacement for retired Claude Sonnet 4. */
 export const CLAUDE_SONNET = "claude-sonnet-4-6";

@@ -31,12 +31,12 @@ describe("resolveClaudeModel", () => {
 
 describe("claude sampling params", () => {
   it("drops temperature on Opus 4.7 and later", () => {
-    assert.equal(claudeRejectsSamplingParams("claude-opus-4-8"), true);
+    assert.equal(claudeRejectsSamplingParams("claude-opus-5-5"), true);
     assert.equal(claudeRejectsSamplingParams("claude-opus-5"), true);
     assert.equal(claudeRejectsSamplingParams("claude-opus-4-6"), false);
     assert.equal(claudeRejectsSamplingParams("claude-sonnet-4-6"), false);
-    const sent = withClaudeSampling("claude-opus-4-8", {
-      model: "claude-opus-4-8",
+    const sent = withClaudeSampling("claude-opus-5-5", {
+      model: "claude-opus-5-5",
       temperature: 0.4,
       max_tokens: 100,
     });

@@ -1,6 +1,6 @@
 /**
  * Weekly agent: cluster learner reports / contact / miss rates, revise live questions
- * with Claude Opus 5, or hide items that need images/photos for a human fix.
+ * with Claude Opus 5.5, or hide items that need images/photos for a human fix.
  *
  *   npm run feedback-agent
  *   FEEDBACK_AGENT_ENABLED=true  (hourly tick; runs when 7d watermark elapsed)
@@ -24,10 +24,10 @@ import {
   type AgentDecision,
   type RankedCandidate,
 } from "./feedbackLearningLogic";
-import { resolveClaudeModel } from "../claudeModels";
+import { CLAUDE_OPUS, resolveClaudeModel } from "../claudeModels";
 
 export const FEEDBACK_AGENT_JOB_NAME = "feedback_learning";
-const DEFAULT_MODEL = "claude-opus-5";
+const DEFAULT_MODEL = CLAUDE_OPUS;
 const DEFAULT_MAX_UPDATES = 15;
 const DEFAULT_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_TICK_MS = 60 * 60 * 1000;
@@ -138,7 +138,7 @@ async function decideWithOpus(params: {
   const parsed = parseAgentDecision(raw);
   if (!parsed) {
     return {
-      decision: { action: "skip", reason: "Could not parse Opus 5 JSON" },
+      decision: { action: "skip", reason: "Could not parse Opus JSON" },
       userPayload,
       assistantPayload: null,
     };

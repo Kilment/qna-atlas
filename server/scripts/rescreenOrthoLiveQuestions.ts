@@ -11,7 +11,7 @@
  * Prefers Claude (Opus) when CLAUDE_API_KEY is set; falls back to OpenAI.
  *
  *   npm run rescreen:ortho-live
- *   ORTHO_RESCREEN_MODEL=claude-opus-4-6
+ *   ORTHO_RESCREEN_MODEL=claude-opus-5-5
  *   ORTHO_RESCREEN_BATCH=2 ORTHO_RESCREEN_CONCURRENCY=2
  *   ORTHO_RESCREEN_LIMIT=50  # optional sample
  */
@@ -24,7 +24,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { questions } from "@shared/schema";
 import { validateQuestionFormat } from "@shared/questionFormat";
-import { claudeRejectsSamplingParams, resolveClaudeModel } from "../claudeModels";
+import { CLAUDE_OPUS, claudeRejectsSamplingParams, resolveClaudeModel } from "../claudeModels";
 
 const OUT_DIR = path.join(process.cwd(), "server", "data");
 const FLAG_PATH = path.join(OUT_DIR, "orthoRescreenFlags.json");
@@ -39,7 +39,7 @@ const CONCURRENCY = Math.min(
   4,
   Math.max(1, parseInt(process.env.ORTHO_RESCREEN_CONCURRENCY || "2", 10) || 2)
 );
-const DEFAULT_CLAUDE_MODEL = "claude-opus-4-6";
+const DEFAULT_CLAUDE_MODEL = CLAUDE_OPUS;
 const DEFAULT_OPENAI_MODEL = "gpt-4o";
 const MODEL =
   process.env.ORTHO_RESCREEN_MODEL ||
