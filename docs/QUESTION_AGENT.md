@@ -91,11 +91,12 @@ by the app at `/question-images/agent/<uuid>.<ext>` (nosniff, immutable caching)
 - Downloaded candidates are downscaled to at most 1600 px and re-encoded to JPEG; they are never cropped.
 - Attribution (credit, license, PMCID, source link) is stored on the question and shown under the
   image in the app.
-- Authoritative image acceptance is a **two-model** Anthropic vision check (Opus 5.5
-  `claude-opus-5-5` and Sonnet 5.5 `claude-sonnet-5-5`, image ≤1568 px JPEG). Do not call retired
-  `claude-opus-4-1` / `claude-opus-4-1-20250805`. The Read tool’s text
-  description of images is not reliable. Optional `agent:pmc-image --score` is only a single-model
-  pre-screen (`QUESTION_AGENT_VISION_MODEL`, default `claude-opus-5-5` in the script).
+- Authoritative image acceptance is `npm run agent:vision-check` (Opus 5.5 `claude-opus-5-5` and
+  Sonnet 5.5 `claude-sonnet-5-5`, image ≤1568 px JPEG). Do not call the Anthropic SDK directly and
+  do not call retired `claude-opus-4-1` / `claude-opus-4-1-20250805`. The script caches the shared
+  rubric for 1 hour and the question text for 5 minutes; the image stays after those breakpoints.
+  The Read tool’s text description of images is not reliable. Optional `agent:pmc-image --score`
+  is only a single-model pre-screen (`QUESTION_AGENT_VISION_MODEL`, default `claude-opus-5-5`).
 - If no acceptable licensed image is found after a reasonable search, **reword** the question so it
   does not require imaging (remove media phrases, describe the finding in text, remove the image /
   unhide as needed). Hide only as a last resort, always as a Slack proposal.

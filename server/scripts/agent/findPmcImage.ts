@@ -17,6 +17,7 @@ import * as path from "path";
 import sharp from "sharp";
 import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_OPUS, resolveClaudeModel } from "../../claudeModels";
+import { cachedSystem } from "../../claudePromptCache";
 import { agentRequest, configFromEnv } from "./questionAgentClient";
 import {
   fetchArticleMeta,
@@ -100,22 +101,8 @@ async function downloadAndPrepare(c: FigureCandidate, outDir: string): Promise<O
   return { localPath, width: out.info.width, height: out.info.height, bytes: out.data.length };
 }
 
-async function scoreWithVision(
-  client: Anthropic,
-  model: string,
-  question: { question: string; answer: string },
-  candidate: ScoredCandidate,
-  minScore: number
-): Promise<VisionScore> {
-  const image = fs.readFileSync(candidate.localPath).toString("base64");
-  const prompt = `You are checking whether a figure is a suitable illustration for a board-exam question that has no image attached.
-
-QUESTION (stem and choices):
-${question.question.slice(0, 3500)}
-
-KEYED ANSWER AND EXPLANATION:
-${question.answer.slice(0, 1500)}
-
+/** Stable across every figure. The question text and the image follow this block. */
+const PMC_SCORE_SYSTEM = `You are checking whether a figure is a suitable illustration for a board-exam question that has no image attached.
 The figure is from a published article (not shown to learners with its caption). Judge only what you can see.
 Reply with JSON only:
 {"score": 0-10, "bodyPartMatch": bool, "modalityMatch": bool, "visibleTextLeak": bool, "multiPanel": bool, "summary": "one sentence"}
@@ -124,15 +111,29 @@ Reply with JSON only:
 - modalityMatch: photo vs radiograph vs CT vs MRI etc. matches what the stem implies.
 - visibleTextLeak: any text, label, arrow annotation, or measurement in the image that names the diagnosis or answer.
 - multiPanel: more than one panel/view (learners would need a single clear view).`;
+
+async function scoreWithVision(
+  client: Anthropic,
+  model: string,
+  question: { question: string; answer: string },
+  candidate: ScoredCandidate,
+  minScore: number
+): Promise<VisionScore> {
+  const image = fs.readFileSync(candidate.localPath).toString("base64");
   const response = await client.messages.create({
     model,
     max_tokens: 500,
+    system: cachedSystem(PMC_SCORE_SYSTEM),
     messages: [
       {
         role: "user",
         content: [
+          {
+            type: "text",
+            text: `QUESTION (stem and choices):\n${question.question.slice(0, 3500)}\n\nKEYED ANSWER AND EXPLANATION:\n${question.answer.slice(0, 1500)}`,
+            cache_control: { type: "ephemeral" },
+          },
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
-          { type: "text", text: prompt },
         ],
       },
     ],

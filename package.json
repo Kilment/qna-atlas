@@ -29,7 +29,7 @@
     "too-easy-agent": "tsx server/jobs/tooEasyQuestionsJob.ts",
     "export:finetune": "tsx server/scripts/exportFinetuneJsonl.ts",
     "seed:agent-memory": "tsx server/scripts/seedAgentMemory.ts",
-    "test:feedback-agent": "tsx --test server/claudeModels.test.ts server/jobs/feedbackLearningLogic.test.ts server/jobs/agentMemory.test.ts server/jobs/tooEasyQuestionsLogic.test.ts server/notifyGrowthLogic.test.ts",
+    "test:feedback-agent": "tsx --test server/claudeModels.test.ts server/claudePromptCache.test.ts server/jobs/feedbackLearningLogic.test.ts server/jobs/agentMemory.test.ts server/jobs/tooEasyQuestionsLogic.test.ts server/notifyGrowthLogic.test.ts",
     "verify:email": "tsx server/scripts/verifyEmailSetup.ts",
     "verify:questions": "tsx server/scripts/verifyQuestionFormat.ts",
     "cleanup:questions": "tsx server/scripts/cleanupQuestions.ts",
@@ -43,6 +43,7 @@
     "attach:question-image": "tsx server/scripts/attachQuestionImage.ts",
     "agent:api": "tsx server/scripts/agent/agentCli.ts",
     "agent:pmc-image": "tsx server/scripts/agent/findPmcImage.ts",
+    "agent:vision-check": "tsx server/scripts/agent/visionCheck.ts",
     "agent:pull-prod": "tsx server/scripts/agent/pullProdContent.ts",
     "agent:reconcile": "tsx server/scripts/agent/reconcileDevFixes.ts",
     "test:question-agent": "tsx --test server/questionAgent/tiers.test.ts server/questionAgent/auth.test.ts server/questionAgent/pmcFigures.test.ts server/questionAgent/contentSync.test.ts server/questionAgent/textEncoding.test.ts server/questionAgent/api.test.ts"

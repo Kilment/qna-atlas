@@ -81,16 +81,21 @@ Follow the report literally when it is an editor request (see Editor requests). 
 
 The Read tool’s text description of images is **not reliable**. For any current or candidate image:
 
-1. Download image bytes (from `<BASE_URL><imageUrl>` or the PMC candidate `localPath`).
-2. Downscale to **≤1568 px** on the long edge and JPEG-encode (do not crop).
-3. Call the Anthropic SDK **twice**, independently, with the image bytes plus the full stem and key. Use these exact ids. `claude-opus-4-1` and `claude-opus-4-1-20250805` are retired and return `not_found_error`. Do not set `temperature`, `top_p`, or `top_k` (Opus 4.7 and later reject them):
-   - Claude Opus 5.5: model id `claude-opus-5-5`
-   - Claude Sonnet 5.5: model id `claude-sonnet-5-5`
-4. Both must agree that the image matches body part, laterality, modality, age/sex context, and
-   that visible text/labels do not leak the diagnosis.
-5. If they disagree: re-judge each with the other’s reasoning included. If still split, **do not
+1. Download the image (from `<BASE_URL><imageUrl>` or the PMC candidate `localPath`) to a local file.
+2. Run the shared vision check. The script downscales to **≤1568 px** JPEG without cropping. Do **not** call the Anthropic SDK yourself. The script sends Opus 5.5 (`claude-opus-5-5`) and Sonnet 5.5 (`claude-sonnet-5-5`), omits `temperature` / `top_p` / `top_k`, and sets explicit prompt-cache breakpoints: the shared rubric is cached for 1 hour, and the question text for 5 minutes. The image is after those breakpoints. `claude-opus-4-1` and `claude-opus-4-1-20250805` are retired and return `not_found_error`.
+
+   ```bash
+   npm run -s agent:vision-check -- --image <jpeg> --question-id <id>
+   # or --question-file q.json with { "question", "answer" }
+   ```
+
+   `agree` is true when both models’ `accepted` flags match.
+3. Both must agree that the image matches body part, laterality, modality, age/sex context, and
+   that visible text/labels do not leak the diagnosis. Use each result’s `accepted` field.
+4. If they disagree: write both JSON results to `tmp/peer.txt` and re-run the same command with
+   `--peer-file tmp/peer.txt` so the rubric stays cached. If still split, **do not
    file an image change** — leave for the human with a clearly labelled rationale (both findings).
-6. Optional: `agent:pmc-image --score` is only a pre-screen (single model). It does **not** replace
+5. Optional: `agent:pmc-image --score` is only a pre-screen (single model). It does **not** replace
    the two-model check.
 
 ### (c) Wrong image → move or replace
