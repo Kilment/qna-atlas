@@ -41,9 +41,9 @@ This run:
 3. For each item: question <id>; read reports; proposals --question-id=<id> --status=pending.
    Skip pending proposals unless you deliberately supersede them with a better fix.
 4. Decision: (a) text → fix stem/choices/explanation (auto for safe typos/explanation; proposal
-   for key/clinical-fact changes); (b) image → REAL two-model vision (claude-opus-4-5 and
-   claude-sonnet-4-5 via Anthropic SDK; JPEG ≤1568px; Read tool image text is NOT reliable; both
-   must agree; on disagreement re-judge with each other's reasoning; leave true splits for humans);
+   for key/clinical-fact changes); (b) image → REAL two-model vision via `npm run -s agent:vision-check -- --image <jpeg> --question-id <id>` (claude-opus-5-5 and
+   claude-sonnet-5-5; do not call the SDK yourself; never claude-opus-4-1; the script caches the shared rubric 1h and the question text 5m and omits temperature/top_p/top_k; JPEG ≤1568px; Read tool image text is NOT reliable; both
+   must agree on accepted; on disagreement re-run with --peer-file; leave true splits for humans);
    (c) wrong image → try moveImageFromQuestionId if it belongs elsewhere, else PMC replace;
    (d) no good image → reword, not hide.
 5. PMC: agent:pmc-image with --query (use [Title] phrases), --avoid (diagnosis/answer terms —

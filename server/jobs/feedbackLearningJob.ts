@@ -1,6 +1,6 @@
 /**
  * Weekly agent: cluster learner reports / contact / miss rates, revise live questions
- * with Claude Opus 5, or hide items that need images/photos for a human fix.
+ * with Claude Opus 5.5, or hide items that need images/photos for a human fix.
  *
  *   npm run feedback-agent
  *   FEEDBACK_AGENT_ENABLED=true  (hourly tick; runs when 7d watermark elapsed)
@@ -24,9 +24,11 @@ import {
   type AgentDecision,
   type RankedCandidate,
 } from "./feedbackLearningLogic";
+import { CLAUDE_OPUS, resolveClaudeModel } from "../claudeModels";
+import { cachedSystem } from "../claudePromptCache";
 
 export const FEEDBACK_AGENT_JOB_NAME = "feedback_learning";
-const DEFAULT_MODEL = "claude-opus-5";
+const DEFAULT_MODEL = CLAUDE_OPUS;
 const DEFAULT_MAX_UPDATES = 15;
 const DEFAULT_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_TICK_MS = 60 * 60 * 1000;
@@ -41,7 +43,12 @@ Decide exactly one action:
 
 Return JSON only (no markdown):
 {"action":"revise"|"needs_manual"|"skip","reason":"short","confidence":"high"|"medium"|"low","revisedQuestion":"...","revisedAnswer":"..."}
-revisedQuestion/revisedAnswer required only for revise.`;
+revisedQuestion/revisedAnswer required only for revise.
+
+Shape examples (format only, not medical advice to copy):
+{"action":"revise","reason":"explanation contradicts the keyed letter","confidence":"high","revisedQuestion":"Full stem, then each choice on its own line starting with A), B), C), D).","revisedAnswer":"B)\nB is correct because the stem findings match B.\nA is incorrect because it describes a different injury.\nC is incorrect because it is the treatment for another diagnosis.\nD is incorrect because the imaging or exam in the stem rules it out."}
+{"action":"needs_manual","reason":"the stem depends on a photograph or radiograph that is not attached and cannot be replaced with text","confidence":"high"}
+{"action":"skip","reason":"the reports only say the item is difficult, with no factual or formatting defect","confidence":"medium"}`;
 
 export type FeedbackAgentResult = {
   skippedPeriod: boolean;
@@ -57,7 +64,7 @@ export type FeedbackAgentResult = {
 };
 
 function modelId(): string {
-  return process.env.FEEDBACK_AGENT_MODEL?.trim() || DEFAULT_MODEL;
+  return resolveClaudeModel(process.env.FEEDBACK_AGENT_MODEL, DEFAULT_MODEL);
 }
 
 function maxUpdates(): number {
@@ -121,7 +128,7 @@ async function decideWithOpus(params: {
     client.messages.create({
       model: modelId(),
       max_tokens: 8000,
-      system: params.system,
+      system: cachedSystem(params.system),
       messages: [{ role: "user", content: userPayload }],
       ...extra,
     } as Anthropic.MessageCreateParams);
@@ -137,7 +144,7 @@ async function decideWithOpus(params: {
   const parsed = parseAgentDecision(raw);
   if (!parsed) {
     return {
-      decision: { action: "skip", reason: "Could not parse Opus 5 JSON" },
+      decision: { action: "skip", reason: "Could not parse Opus JSON" },
       userPayload,
       assistantPayload: null,
     };
@@ -272,7 +279,7 @@ If nothing new, return []. Max 8 lessons. Each lesson one sentence.`;
     response = await client.messages.create({
       model: modelId(),
       max_tokens: 2000,
-      system: distillSystem,
+      system: cachedSystem(distillSystem),
       messages: [{ role: "user", content: user }],
     });
   } catch {

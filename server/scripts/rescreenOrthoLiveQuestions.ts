@@ -11,7 +11,7 @@
  * Prefers Claude (Opus) when CLAUDE_API_KEY is set; falls back to OpenAI.
  *
  *   npm run rescreen:ortho-live
- *   ORTHO_RESCREEN_MODEL=claude-opus-4-6
+ *   ORTHO_RESCREEN_MODEL=claude-opus-5-5
  *   ORTHO_RESCREEN_BATCH=2 ORTHO_RESCREEN_CONCURRENCY=2
  *   ORTHO_RESCREEN_LIMIT=50  # optional sample
  */
@@ -24,6 +24,8 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { questions } from "@shared/schema";
 import { validateQuestionFormat } from "@shared/questionFormat";
+import { CLAUDE_OPUS, claudeRejectsSamplingParams, resolveClaudeModel } from "../claudeModels";
+import { cachedSystem } from "../claudePromptCache";
 
 const OUT_DIR = path.join(process.cwd(), "server", "data");
 const FLAG_PATH = path.join(OUT_DIR, "orthoRescreenFlags.json");
@@ -38,11 +40,15 @@ const CONCURRENCY = Math.min(
   4,
   Math.max(1, parseInt(process.env.ORTHO_RESCREEN_CONCURRENCY || "2", 10) || 2)
 );
-const DEFAULT_CLAUDE_MODEL = "claude-opus-4-6";
+const DEFAULT_CLAUDE_MODEL = CLAUDE_OPUS;
 const DEFAULT_OPENAI_MODEL = "gpt-4o";
 const MODEL =
   process.env.ORTHO_RESCREEN_MODEL ||
   (process.env.CLAUDE_API_KEY ? DEFAULT_CLAUDE_MODEL : DEFAULT_OPENAI_MODEL);
+
+function resolvedModel(provider: LLMClient["provider"]): string {
+  return provider === "claude" ? resolveClaudeModel(MODEL, DEFAULT_CLAUDE_MODEL) : MODEL;
+}
 
 type LLMClient =
   | { provider: "claude"; client: Anthropic }
@@ -145,8 +151,11 @@ When rewriting explanations, keep board-level accuracy, be concise, and use this
   A is incorrect because... B is incorrect because... (skip the correct letter).
 
 Never use the word "radiographic" in a corrected stem.
+If missingDistractorRationales is true, verdict cannot be "ok" unless you verify rationales are already present — otherwise fix the explanation.
 Output: JSON array only, no markdown fences. Each object:
-{ "id", "verdict", "confidence", "issue?", "problems?": string[], "correctedQuestion?", "correctedAnswer?" }`;
+{ "id", "verdict", "confidence", "issue?", "problems?": string[], "correctedQuestion?", "correctedAnswer?" }
+Shape example (format only):
+{"id":"example","verdict":"fix","confidence":"high","issue":"explanation contradicts the keyed letter","problems":["contradiction","missing distractor rationale"],"correctedAnswer":"C)\nC is correct because the stem findings match C.\nA is incorrect because it names a different structure.\nB is incorrect because it is the operation for a diagnosis this stem does not describe.\nD is incorrect because the exam finding rules it out."}`;
 }
 
 function parseReviews(raw: string): ReviewItem[] {
@@ -212,22 +221,23 @@ async function reviewBatch(
       choiceLettersFromQuestion(b.question)
     ),
   }));
-  const userContent = `Strictly rescreen these ${payload.length} live Ortho Atlas MCQs. If missingDistractorRationales is true, verdict cannot be "ok" unless you verify rationales are already present — otherwise fix the explanation.\n${JSON.stringify(payload)}`;
+  const userContent = `Strictly rescreen these ${payload.length} live Ortho Atlas MCQs.\n${JSON.stringify(payload)}`;
 
   let content: string | null = null;
   if (llm.provider === "claude") {
+    const model = resolvedModel(llm.provider);
     const response = await llm.client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 8000,
-      temperature: 0.15,
-      system: buildSystemPrompt(),
+      ...(claudeRejectsSamplingParams(model) ? {} : { temperature: 0.15 }),
+      system: cachedSystem(buildSystemPrompt()),
       messages: [{ role: "user", content: userContent }],
     });
     const block = response.content.find((b): b is { type: "text"; text: string } => b.type === "text");
     content = block?.text ?? null;
   } else {
     const response = await llm.client.chat.completions.create({
-      model: MODEL,
+      model: resolvedModel(llm.provider),
       messages: [
         { role: "system", content: buildSystemPrompt() },
         { role: "user", content: userContent },
@@ -262,7 +272,7 @@ async function reviewBatch(
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const llm = getLLM();
-  console.log(`Using ${llm.provider} model=${MODEL}`);
+  console.log(`Using ${llm.provider} model=${resolvedModel(llm.provider)}`);
 
   let rows = await db
     .select({
@@ -309,7 +319,7 @@ async function main() {
       batch: BATCH,
       concurrency: CONCURRENCY,
       provider: llm.provider,
-      model: MODEL,
+      model: resolvedModel(llm.provider),
     })
   );
 
@@ -503,7 +513,7 @@ async function main() {
   const summary = {
     reviewedAt: new Date().toISOString(),
     provider: llm.provider,
-    model: MODEL,
+    model: resolvedModel(llm.provider),
     totalLive: rows.length,
     skippedAlreadyRescreened: priorDone.length,
     remainingReviewed: todo.length,

@@ -12,6 +12,8 @@
  * Requires: CLAUDE_API_KEY (preferred) or OPENAI_API_KEY or OPENAI_QUESTION_GENERATION_API_KEY
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { CLAUDE_SONNET, claudeRejectsSamplingParams, resolveClaudeModel } from "../claudeModels";
+import { cachedSystem, userContentWithCachedPrefix } from "../claudePromptCache";
 import OpenAI from "openai";
 import { db } from "../db";
 import { questions } from "@shared/schema";
@@ -55,14 +57,8 @@ function parseRephrasedBatch(raw: string): { question: string; answer: string }[
   return out;
 }
 
-function buildRephrasePrompt(batch: { id: string; question: string; answer: string }[]): string {
-  const items = batch
-    .map(
-      (q, i) =>
-        `[${i + 1}]\nQuestion:\n${q.question}\n\nAnswer:\n${q.answer}`
-    )
-    .join("\n\n---\n\n");
-  return `Rephrase each of the following multiple-choice questions and their answers to use different wording while keeping the exact same meaning, the same correct answer letter, and the same structure.
+/** Identical on every batch. The item count and the questions themselves stay after the cache breakpoint. */
+const REPHRASE_RULES = `Rephrase each of the following multiple-choice questions and their answers to use different wording while keeping the exact same meaning, the same correct answer letter, and the same structure.
 
 CRITICAL - Question format (must be exact or validation will fail):
 - The "question" string must be the full stem followed by each choice on its own line.
@@ -78,7 +74,18 @@ Rules:
 - Change wording throughout: question stem, each option (A, B, C, D, etc.), and the answer explanation.
 - Preserve: number of choices (4 or 5), correct answer letter, and the exact choice format above. Answer must start with "X)\\n" then the explanation.
 - Explanation content (required): Include (1) why the correct answer is correct, and (2) for each wrong option, a brief reason why it is wrong. If the current answer only explains the correct choice, add concise reasons for why each incorrect option is wrong (e.g. "A is incorrect because... B is incorrect because..."). Keep the same clinical/educational accuracy.
-- Output a JSON array of exactly ${batch.length} objects with keys "question" and "answer", in the same order as the input. Use \\n inside JSON strings for newlines.
+- Output a JSON array of objects with keys "question" and "answer", in the same order as the input. Use \\n inside JSON strings for newlines.`;
+
+function buildRephrasePrompt(batch: { id: string; question: string; answer: string }[]): string {
+  const items = batch
+    .map(
+      (q, i) =>
+        `[${i + 1}]\nQuestion:\n${q.question}\n\nAnswer:\n${q.answer}`
+    )
+    .join("\n\n---\n\n");
+  return `${REPHRASE_RULES}
+
+Output a JSON array of exactly ${batch.length} objects.
 
 Input:
 
@@ -91,13 +98,24 @@ async function rephraseBatchWithClaude(
   client: Anthropic,
   batch: { id: string; question: string; answer: string }[]
 ): Promise<{ question: string; answer: string }[]> {
-  const model = process.env.CLAUDE_REPHRASE_MODEL || "claude-sonnet-4-20250514";
+  const model = resolveClaudeModel(process.env.CLAUDE_REPHRASE_MODEL, CLAUDE_SONNET);
+  const items = batch
+    .map((q, i) => `[${i + 1}]\nQuestion:\n${q.question}\n\nAnswer:\n${q.answer}`)
+    .join("\n\n---\n\n");
   const response = await client.messages.create({
     model,
     max_tokens: 16384,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildRephrasePrompt(batch) }],
-    temperature: 0.4,
+    system: cachedSystem(SYSTEM_PROMPT),
+    messages: [
+      {
+        role: "user",
+        content: userContentWithCachedPrefix(
+          REPHRASE_RULES,
+          `Output a JSON array of exactly ${batch.length} objects.\n\nInput:\n\n${items}\n\nRespond with only the JSON array, no other text.`
+        ),
+      },
+    ],
+    ...(claudeRejectsSamplingParams(model) ? {} : { temperature: 0.4 }),
   });
   const block = response.content.find((b): b is { type: "text"; text: string } => b.type === "text");
   if (!block) return [];
